@@ -3,28 +3,30 @@
  * Exports all audio-related classes and utilities
  */
 
+export * from './types';
 export { AudioManager } from './AudioManager';
 export { SoundLibrary } from './SoundLibrary';
 export { SpatialAudioController } from './SpatialAudioController';
 export { ProceduralSoundGenerator } from './ProceduralSoundGenerator';
 export { AudioFeedbackSystem } from './AudioFeedbackSystem';
 export { AmbientSoundscapeSystem } from './AmbientSoundscapeSystem';
-export * from './types';
 
-// Create singleton instances
-import { AudioManager } from './AudioManager';
-import { SoundLibrary } from './SoundLibrary';
-import { SpatialAudioController } from './SpatialAudioController';
-import { ProceduralSoundGenerator } from './ProceduralSoundGenerator';
-import { AudioFeedbackSystem } from './AudioFeedbackSystem';
-import { AmbientSoundscapeSystem } from './AmbientSoundscapeSystem';
+import { audioManager } from './AudioManager';
+import { soundLibrary } from './SoundLibrary';
+import { spatialAudioController } from './SpatialAudioController';
+import { proceduralSoundGenerator } from './ProceduralSoundGenerator';
+import { audioFeedbackSystem } from './AudioFeedbackSystem';
+import { ambientSoundscapeSystem } from './AmbientSoundscapeSystem';
 
-export const audioManager = new AudioManager();
-export const soundLibrary = new SoundLibrary();
-export const spatialAudioController = new SpatialAudioController();
-export const proceduralSoundGenerator = new ProceduralSoundGenerator();
-export const audioFeedbackSystem = new AudioFeedbackSystem();
-export const ambientSoundscapeSystem = new AmbientSoundscapeSystem();
+// Re-export singletons (one source-of-truth)
+export {
+  audioManager,
+  soundLibrary,
+  spatialAudioController,
+  proceduralSoundGenerator,
+  audioFeedbackSystem,
+  ambientSoundscapeSystem,
+};
 
 /**
  * Initialize the complete audio system
@@ -38,16 +40,24 @@ export async function initializeAudioSystem(): Promise<void> {
     await soundLibrary.initialize();
 
     // Initialize spatial audio controller
-    await spatialAudioController.initialize();
+    if (typeof spatialAudioController.initialize === 'function') {
+      await spatialAudioController.initialize();
+    }
 
     // Initialize procedural sound generator
-    await proceduralSoundGenerator.initialize();
+    if (typeof proceduralSoundGenerator.initialize === 'function') {
+      await proceduralSoundGenerator.initialize();
+    }
 
     // Initialize audio feedback system
-    await audioFeedbackSystem.initialize();
+    if (typeof audioFeedbackSystem.initialize === 'function') {
+      await audioFeedbackSystem.initialize();
+    }
 
     // Initialize ambient soundscape system
-    await ambientSoundscapeSystem.initialize();
+    if (typeof ambientSoundscapeSystem.initialize === 'function') {
+      await ambientSoundscapeSystem.initialize();
+    }
 
     console.log('Audio system initialized successfully');
   } catch (error) {
@@ -60,7 +70,27 @@ export async function initializeAudioSystem(): Promise<void> {
  * Cleanup audio system resources
  */
 export function disposeAudioSystem(): void {
-  ambientSoundscapeSystem.dispose();
-  spatialAudioController.dispose();
-  audioManager.dispose();
+  try {
+    if (ambientSoundscapeSystem && typeof ambientSoundscapeSystem.dispose === 'function') {
+      ambientSoundscapeSystem.dispose();
+    }
+  } catch (e) {
+    console.warn('Failed to dispose ambientSoundscapeSystem:', e);
+  }
+
+  try {
+    if (spatialAudioController && typeof spatialAudioController.dispose === 'function') {
+      spatialAudioController.dispose();
+    }
+  } catch (e) {
+    console.warn('Failed to dispose spatialAudioController:', e);
+  }
+
+  try {
+    if (audioManager && typeof audioManager.dispose === 'function') {
+      audioManager.dispose();
+    }
+  } catch (e) {
+    console.warn('Failed to dispose audioManager:', e);
+  }
 }

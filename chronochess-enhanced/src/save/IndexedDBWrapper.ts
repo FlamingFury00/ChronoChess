@@ -34,7 +34,7 @@ export class IndexedDBWrapper {
       const idb =
         (globalThis as any).indexedDB ||
         (typeof window !== 'undefined' ? (window as any).indexedDB : undefined) ||
-        (typeof global !== 'undefined' ? (global as any).indexedDB : undefined);
+        (globalThis as any).indexedDB;
 
       // DEBUG: report which globals have indexedDB at the time initialize() is called
       try {
@@ -42,10 +42,10 @@ export class IndexedDBWrapper {
         console.debug('IndexedDBWrapper.initialize() detection:', {
           globalThis: !!(globalThis as any).indexedDB,
           window: typeof window !== 'undefined' ? !!(window as any).indexedDB : false,
-          global: typeof global !== 'undefined' ? !!(global as any).indexedDB : false,
+          global: !!(globalThis as any).indexedDB,
           allowInMemoryFallback: this.allowInMemoryFallback,
         });
-      } catch (e) {
+      } catch {
         // ignore
       }
 
@@ -421,7 +421,7 @@ export class IndexedDBWrapper {
       const idbForDelete =
         (globalThis as any).indexedDB ||
         (typeof window !== 'undefined' ? (window as any).indexedDB : undefined) ||
-        (typeof global !== 'undefined' ? (global as any).indexedDB : undefined);
+        (globalThis as any).indexedDB;
 
       const deleteRequest = idbForDelete.deleteDatabase(this.dbName);
 

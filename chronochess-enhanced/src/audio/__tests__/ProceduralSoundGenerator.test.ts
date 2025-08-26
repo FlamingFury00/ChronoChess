@@ -4,7 +4,6 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ProceduralSoundGenerator } from '../ProceduralSoundGenerator';
-import { audioManager } from '../AudioManager';
 
 // Mock AudioManager
 vi.mock('../AudioManager', () => ({

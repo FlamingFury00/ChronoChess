@@ -252,13 +252,18 @@ const DEFAULT_SAVE_KEY = 'chronochess_save';
 const MAX_UNDO_STACK_SIZE = 50;
 
 // Auto-save timer reference
-let autoSaveTimer: NodeJS.Timeout | null = null;
+let autoSaveTimer: number | null = null;
 
 // Core system instances
 const resourceManager = new ResourceManager();
 const pieceEvolutionSystem = new PieceEvolutionSystem();
 const evolutionTreeSystem = new EvolutionTreeSystem();
 const chessEngine = new ChessEngine();
+// Reentrancy guard to avoid recursive calls between engine validation and
+// store-based enhanced move generation (engine may call back into
+// `getEnhancedValidMoves` during `isEnhancedMoveLegal`). When set, we
+// return raw engine moves to the caller to avoid recursion.
+let _inEnhancedMoveGen = false;
 // Expose engine globally for other subsystems (renderer, tests) to query piece evolution info
 try {
   (globalThis as any).chronoChessEngine = chessEngine;
@@ -1160,7 +1165,22 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               });
             },
             onKnightDash: (fromSquare, toSquare) => {
-              get().addToGameLog(`Knight DASH! ${fromSquare}->${toSquare}`);
+              try {
+                const state = get();
+                const storeEvos = state.pieceEvolutions as any;
+                const dashActive =
+                  storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                if (dashActive) {
+                  get().addToGameLog(`Knight DASH! ${fromSquare}->${toSquare}`);
+                } else {
+                  console.log(
+                    `🛑 Skipping Knight DASH log for ${fromSquare}->${toSquare}: dash not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn('Error checking dash activity for game log (skipping log):', err);
+                // Do not log ability activation if we cannot verify it's active
+              }
 
               // Trigger VFX effect if we have a renderer
               const state = get();
@@ -1170,10 +1190,36 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               }
             },
             onSpecialAbility: (type, square) => {
-              if (type === 'rook_entrench') {
-                get().addToGameLog(`Rook@${square} ENTRENCHED!`);
-              } else if (type === 'bishop_consecrate') {
-                get().addToGameLog(`Bishop@${square} CONSECRATING!`);
+              try {
+                const state = get();
+                const storeEvos = state.pieceEvolutions as any;
+                if (type === 'rook_entrench') {
+                  const entrenchActive =
+                    storeEvos && storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1;
+                  if (entrenchActive) {
+                    get().addToGameLog(`Rook@${square} ENTRENCHED!`);
+                  } else {
+                    console.log(
+                      `🛑 Skipping Rook entrench log for ${square}: entrench not active in store`
+                    );
+                  }
+                } else if (type === 'bishop_consecrate') {
+                  const consecrateActive =
+                    storeEvos && storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3;
+                  if (consecrateActive) {
+                    get().addToGameLog(`Bishop@${square} CONSECRATING!`);
+                  } else {
+                    console.log(
+                      `🛑 Skipping Bishop consecrate log for ${square}: consecration not active in store`
+                    );
+                  }
+                }
+              } catch (err) {
+                console.warn(
+                  'Error checking special ability activity for game log (skipping logs):',
+                  err
+                );
+                // Skip logging to avoid false-positive ability messages
               }
             },
           },
@@ -1884,7 +1930,10 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         try {
           // Use authoritative engine board to verify pieces rather than store FEN
           const chessCheck = chessEngine.chess;
-          const piece = chessCheck.get(square as any);
+          let piece = chessCheck.get(square as any);
+          let pieceSourceTurn = chessCheck.turn();
+          let reChess: Chess | null = null;
+
           if (!piece) {
             console.warn(
               `⚠️ No piece at ${square} according to store FEN. Attempting resync from engine.`
@@ -1895,7 +1944,7 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               console.log(`🔄 Updating store FEN to engine FEN for resync: ${engineFen}`);
               get().updateGameState({ fen: engineFen });
               // Re-check after resync
-              const reChess = new Chess(engineFen);
+              reChess = new Chess(engineFen);
               const rePiece = reChess.get(square as any);
               if (!rePiece) {
                 console.warn(`❌ After resync, no piece at ${square}. Aborting selection.`);
@@ -1903,6 +1952,9 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                 if (renderer && renderer.clearAllHighlights) renderer.clearAllHighlights();
                 return;
               }
+              // Use resynced piece and resynced turn for validation
+              piece = rePiece as any;
+              pieceSourceTurn = reChess.turn();
             } else {
               console.warn(
                 `❌ No piece at ${square} and no differing engine FEN available. Aborting selection.`
@@ -1911,6 +1963,52 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               if (renderer && renderer.clearAllHighlights) renderer.clearAllHighlights();
               return;
             }
+          }
+
+          // Prevent selecting when it's not the player's turn (player assumed to be white)
+          const currentEngineTurn = pieceSourceTurn;
+          if (currentEngineTurn !== 'w') {
+            console.log(`🛑 Selection blocked: it's ${currentEngineTurn}'s turn, not player's.`);
+            const renderer = (window as any).chronoChessRenderer;
+            if (renderer) {
+              if (renderer.highlightSquareError) {
+                try {
+                  renderer.highlightSquareError(square);
+                } catch (err) {
+                  if (renderer.clearAllHighlights) renderer.clearAllHighlights();
+                }
+              } else if (renderer.clearAllHighlights) {
+                renderer.clearAllHighlights();
+              }
+            }
+            // Optionally add a user-visible message (lightweight)
+            get().addToGameLog(`⚠️ It's not your turn — wait for the opponent to move.`);
+            return;
+          }
+
+          // Prevent selecting an opponent piece when it's the player's turn
+          if (!piece || (piece as any).color !== currentEngineTurn) {
+            const pieceColor = piece ? (piece as any).color : 'none';
+            console.log(
+              `🛑 Selection blocked: piece at ${square} is ${pieceColor} while it's ${currentEngineTurn}'s turn.`
+            );
+            const renderer = (window as any).chronoChessRenderer;
+            if (renderer) {
+              if (renderer.highlightSquareError) {
+                try {
+                  renderer.highlightSquareError(square);
+                } catch (err) {
+                  if (renderer.clearAllHighlights) renderer.clearAllHighlights();
+                }
+              } else if (renderer.clearAllHighlights) {
+                renderer.clearAllHighlights();
+              }
+            }
+            // Optionally add a user-visible message
+            get().addToGameLog(
+              `⚠️ Cannot select opponent's piece at ${square} — it's ${currentEngineTurn === 'w' ? 'White' : 'Black'}'s turn.`
+            );
+            return;
           }
         } catch (err) {
           console.error('Error while verifying selected square:', err);
@@ -1991,6 +2089,19 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
           console.log(
             `🔍 Please check if the piece you're trying to move is actually where you think it is`
+          );
+          return false;
+        }
+
+        // If the selected piece belongs to the side NOT to move, bail early with a clear message
+        const engineTurn = chess.turn();
+        if (pieceAtFrom.color !== engineTurn) {
+          console.warn(
+            `⛔ Attempted to move ${pieceAtFrom.color} piece from ${from} while it is ${engineTurn}'s turn - aborting`
+          );
+          // Provide a user-visible, unambiguous message in the game log
+          get().addToGameLog(
+            `⚠️ Cannot move opponent's piece at ${from} — it's ${engineTurn === 'w' ? 'White' : 'Black'}'s turn.`
           );
           return false;
         }
@@ -2107,9 +2218,46 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                 console.log(
                   `🎆 ENHANCED MOVE EXECUTED: ${enhancedMove.enhanced} - ${result.move.san}`
                 );
-                get().addToGameLog(
-                  `🎆 ENHANCED MOVE: ${enhancedMove.enhanced.toUpperCase()} - ${result.move.san}`
-                );
+                try {
+                  const state = get();
+                  const storeEvos = state.pieceEvolutions as any;
+                  // If the enhancement corresponds to a known ability, check store/engine
+                  const enhanceId = String(enhancedMove.enhanced || '').toLowerCase();
+                  let allowed = true;
+                  switch (enhanceId) {
+                    case 'knight-dash':
+                    case 'dash':
+                      allowed = storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                      break;
+                    case 'rook-entrench':
+                    case 'entrenchment':
+                      allowed = storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1;
+                      break;
+                    case 'breakthrough':
+                    case 'enhanced-march':
+                    case 'diagonal-move':
+                      allowed = storeEvos.pawn && (storeEvos.pawn.resilience || 0) > 0;
+                      break;
+                    default:
+                      allowed = true;
+                  }
+
+                  if (allowed) {
+                    get().addToGameLog(
+                      `🎆 ENHANCED MOVE: ${enhancedMove.enhanced.toUpperCase()} - ${result.move.san}`
+                    );
+                  } else {
+                    console.log(
+                      `🛑 Skipping enhanced move log for ${from}->${to} (${enhancedMove.enhanced}): ability not active in store`
+                    );
+                  }
+                } catch (err) {
+                  console.warn(
+                    'Error checking enhancement activity for game log (skipping log):',
+                    err
+                  );
+                  // Skip logging if we cannot verify enhancement activation
+                }
               } else {
                 console.log(`🎆 ENHANCED MOVE EXECUTED: ${result.move.san}`);
                 get().addToGameLog(`🎆 ENHANCED MOVE: ${result.move.san}`);
@@ -2528,17 +2676,43 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               pieceState.isEntrenched = true;
               const owner = pieceState.color === 'w' ? 'Your' : 'Enemy';
               const defensePower = state.pieceEvolutions.rook.entrenchPower;
-              get().addToGameLog(
-                `🛡️ ${owner} rook at ${square} is now ENTRENCHED! (+${defensePower * 25} AI evaluation, harder to attack)`
-              );
-              get().addToGameLog(
-                `💡 TIP: Entrenched rooks are defensive powerhouses - they resist attacks and control territory!`
-              );
+              try {
+                const storeEvos = state.pieceEvolutions as any;
+                const entrenchActive =
+                  storeEvos && storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1;
+                if (entrenchActive) {
+                  get().addToGameLog(
+                    `🛡️ ${owner} rook at ${square} is now ENTRENCHED! (+${defensePower * 25} AI evaluation, harder to attack)`
+                  );
+                  get().addToGameLog(
+                    `💡 TIP: Entrenched rooks are defensive powerhouses - they resist attacks and control territory!`
+                  );
+                } else {
+                  console.log(
+                    `🛑 Skipping ENTRENCHED logs for ${square}: entrench not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn(
+                  'Error checking entrench activity for manual log (skipping logs):',
+                  err
+                );
+                // Skip logs on error to avoid false positives
+              }
 
-              // Trigger VFX
+              // Trigger VFX (only if entrenchment is active in store evolutions)
               const renderer = (window as any).chronoChessRenderer;
-              if (renderer && renderer.triggerRookEntrenchVFX) {
-                setTimeout(() => renderer.triggerRookEntrenchVFX(square), 500);
+              try {
+                const active =
+                  state.pieceEvolutions.rook &&
+                  (state.pieceEvolutions.rook.entrenchThreshold || 3) < 3;
+                if (active && renderer && renderer.triggerRookEntrenchVFX) {
+                  setTimeout(() => renderer.triggerRookEntrenchVFX(square), 500);
+                }
+              } catch (err) {
+                if (renderer && renderer.triggerRookEntrenchVFX) {
+                  setTimeout(() => renderer.triggerRookEntrenchVFX(square), 500);
+                }
               }
             }
 
@@ -2550,17 +2724,43 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             ) {
               pieceState.isConsecratedSource = true;
               const owner = pieceState.color === 'w' ? 'Your' : 'Enemy';
-              get().addToGameLog(
-                `✨ ${owner} bishop at ${square} is CONSECRATING! (Blessing nearby allies with +15 evaluation each)`
-              );
-              get().addToGameLog(
-                `💡 TIP: Consecrated bishops empower all adjacent diagonal allies - keep them protected!`
-              );
+              try {
+                const storeEvos = state.pieceEvolutions as any;
+                const consecrateActive =
+                  storeEvos && storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3;
+                if (consecrateActive) {
+                  get().addToGameLog(
+                    `✨ ${owner} bishop at ${square} is CONSECRATING! (Blessing nearby allies with +15 evaluation each)`
+                  );
+                  get().addToGameLog(
+                    `💡 TIP: Consecrated bishops empower all adjacent diagonal allies - keep them protected!`
+                  );
+                } else {
+                  console.log(
+                    `🛑 Skipping CONSECRATING logs for ${square}: consecration not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn(
+                  'Error checking consecrate activity for manual log (skipping logs):',
+                  err
+                );
+                // Skip logs on error to avoid false positives
+              }
 
-              // Trigger VFX
+              // Trigger VFX (only if consecration is active in store evolutions)
               const renderer = (window as any).chronoChessRenderer;
-              if (renderer && renderer.triggerBishopConsecrateVFX) {
-                setTimeout(() => renderer.triggerBishopConsecrateVFX(square), 300);
+              try {
+                const active =
+                  state.pieceEvolutions.bishop &&
+                  (state.pieceEvolutions.bishop.consecrationTurns || 3) < 3;
+                if (active && renderer && renderer.triggerBishopConsecrateVFX) {
+                  setTimeout(() => renderer.triggerBishopConsecrateVFX(square), 300);
+                }
+              } catch (err) {
+                if (renderer && renderer.triggerBishopConsecrateVFX) {
+                  setTimeout(() => renderer.triggerBishopConsecrateVFX(square), 300);
+                }
               }
             }
           }
@@ -2684,20 +2884,38 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               }
             }
 
-            // Trigger VFX if queen is dominating targets
+            // Trigger VFX if queen is dominating targets (ensure dominance ability active in store)
             if (hasDominatedTargets) {
               const renderer = (window as any).chronoChessRenderer;
-              if (renderer && renderer.triggerQueenDominanceVFX) {
-                setTimeout(() => {
-                  renderer.triggerQueenDominanceVFX(sourceSquare);
-                  const owner = sourcePieceState.color === 'w' ? 'Your' : 'Enemy';
-                  get().addToGameLog(
-                    `👑 ${owner} queen at ${sourceSquare} is DOMINATING enemies! (Range ${range}, -40 evaluation penalty each)`
-                  );
-                  get().addToGameLog(
-                    `💡 TIP: Queen dominance weakens enemy pieces and restricts their movement options!`
-                  );
-                }, 100);
+              try {
+                const active =
+                  state.pieceEvolutions.queen &&
+                  (state.pieceEvolutions.queen.dominanceAuraRange || 1) > 1;
+                if (active && renderer && renderer.triggerQueenDominanceVFX) {
+                  setTimeout(() => {
+                    renderer.triggerQueenDominanceVFX(sourceSquare);
+                    const owner = sourcePieceState.color === 'w' ? 'Your' : 'Enemy';
+                    get().addToGameLog(
+                      `👑 ${owner} queen at ${sourceSquare} is DOMINATING enemies! (Range ${range}, -40 evaluation penalty each)`
+                    );
+                    get().addToGameLog(
+                      `💡 TIP: Queen dominance weakens enemy pieces and restricts their movement options!`
+                    );
+                  }, 100);
+                }
+              } catch (err) {
+                if (renderer && renderer.triggerQueenDominanceVFX) {
+                  setTimeout(() => {
+                    renderer.triggerQueenDominanceVFX(sourceSquare);
+                    const owner = sourcePieceState.color === 'w' ? 'Your' : 'Enemy';
+                    get().addToGameLog(
+                      `👑 ${owner} queen at ${sourceSquare} is DOMINATING enemies! (Range ${range}, -40 evaluation penalty each)`
+                    );
+                    get().addToGameLog(
+                      `💡 TIP: Queen dominance weakens enemy pieces and restricts their movement options!`
+                    );
+                  }, 100);
+                }
               }
             }
           }
@@ -2784,17 +3002,42 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             // Show available dash moves to the player
             const possibleDashMoves = chessEngine.getValidMoves(move.to as any);
             if (possibleDashMoves.length > 0) {
-              get().addToGameLog(
-                `🎯 KNIGHT DASH ACTIVATED! Your knight at ${move.to} can make a bonus move! Click the knight to execute.`
-              );
-              get().addToGameLog(
-                `💡 TIP: Knight Dash gives you an extra move - use it to capture pieces or improve position!`
-              );
+              try {
+                const storeEvos = state.pieceEvolutions as any;
+                const active =
+                  storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                if (active) {
+                  get().addToGameLog(
+                    `🎯 KNIGHT DASH ACTIVATED! Your knight at ${move.to} can make a bonus move! Click the knight to execute.`
+                  );
+                  get().addToGameLog(
+                    `💡 TIP: Knight Dash gives you an extra move - use it to capture pieces or improve position!`
+                  );
+                } else {
+                  console.log(
+                    `🛑 Skipping KNIGHT DASH activation log for ${move.to}: dash not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn(
+                  'Error checking knight dash activation for game log (skipping logs):',
+                  err
+                );
+                // Skip logging on error to avoid false positives
+              }
 
-              // Trigger VFX to show dash is available
+              // Trigger VFX to show dash is available (only if knight dash is active)
               setTimeout(() => {
-                if (renderer.triggerKnightDashVFX) {
-                  renderer.triggerKnightDashVFX(move.to, move.to); // Self-highlight to show available dash
+                try {
+                  const active =
+                    state.pieceEvolutions.knight &&
+                    (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                  if (active && renderer.triggerKnightDashVFX) {
+                    renderer.triggerKnightDashVFX(move.to, move.to); // Self-highlight to show available dash
+                  }
+                } catch (err) {
+                  if (renderer.triggerKnightDashVFX)
+                    renderer.triggerKnightDashVFX(move.to, move.to);
                 }
               }, 200);
 
@@ -2827,18 +3070,44 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
                 // Add dash move to history and log
                 get().addMoveToHistory(dashResult.move);
-                get().addToGameLog(
-                  `🤖 AI KNIGHT DASH! ${dashMove.from}->${dashMove.to} (Gained extra move advantage!)`
-                );
-                get().addToGameLog(
-                  `🚨 Enemy knight used dash ability - they got 2 moves this turn!`
-                );
-
-                // Trigger VFX after the actual move
-                setTimeout(() => {
-                  if (renderer.triggerKnightDashVFX) {
-                    renderer.triggerKnightDashVFX(move.to, dashMove.to);
+                try {
+                  const storeEvos = state.pieceEvolutions as any;
+                  const active =
+                    storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                  if (active) {
+                    get().addToGameLog(
+                      `🤖 AI KNIGHT DASH! ${dashMove.from}->${dashMove.to} (Gained extra move advantage!)`
+                    );
+                    get().addToGameLog(
+                      `🚨 Enemy knight used dash ability - they got 2 moves this turn!`
+                    );
+                  } else {
+                    console.log(
+                      `🛑 Skipping AI KNIGHT DASH log for ${dashMove.from}->${dashMove.to}: dash not active in store`
+                    );
                   }
+                } catch (err) {
+                  console.warn(
+                    'Error checking AI knight dash activity for game log (skipping logs):',
+                    err
+                  );
+                  // Skip logging on error to avoid false positives
+                }
+
+                // Trigger VFX after the actual move (only if active)
+                setTimeout(() => {
+                  try {
+                    const active =
+                      state.pieceEvolutions.knight &&
+                      (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                    if (active && renderer.triggerKnightDashVFX) {
+                      renderer.triggerKnightDashVFX(move.to, dashMove.to);
+                    }
+                  } catch (err) {
+                    if (renderer.triggerKnightDashVFX)
+                      renderer.triggerKnightDashVFX(move.to, dashMove.to);
+                  }
+
                   // Update the 3D board to show the dash move
                   if (renderer.updateBoard) {
                     renderer.updateBoard(newGameState);
@@ -2857,14 +3126,37 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
             // Entrenched rooks get enhanced defensive capabilities
             if (playerColor === 'w') {
-              get().addToGameLog(
-                `🛡️ Your entrenched rook is harder to capture and blocks enemy advances!`
-              );
+              try {
+                const storeEvos = state.pieceEvolutions as any;
+                const active =
+                  storeEvos && storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1;
+                if (active) {
+                  get().addToGameLog(
+                    `🛡️ Your entrenched rook is harder to capture and blocks enemy advances!`
+                  );
+                } else {
+                  console.log(
+                    `🛑 Skipping entrenched rook player log for ${move.to}: entrench not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn('Error checking entrench activity for game log:', err);
+                get().addToGameLog(
+                  `🛡️ Your entrenched rook is harder to capture and blocks enemy advances!`
+                );
+              }
             }
 
             setTimeout(() => {
-              if (renderer.triggerRookEntrenchVFX) {
-                renderer.triggerRookEntrenchVFX(move.to);
+              try {
+                const active =
+                  state.pieceEvolutions.rook &&
+                  (state.pieceEvolutions.rook.entrenchThreshold || 3) < 3;
+                if (active && renderer.triggerRookEntrenchVFX) {
+                  renderer.triggerRookEntrenchVFX(move.to);
+                }
+              } catch (err) {
+                if (renderer.triggerRookEntrenchVFX) renderer.triggerRookEntrenchVFX(move.to);
               }
             }, 300);
           }
@@ -2877,14 +3169,39 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             console.log(`✨ Consecrated bishop provides ally bonuses: ${move.to}`);
 
             if (playerColor === 'w') {
-              get().addToGameLog(
-                `✨ Consecrated bishop empowers nearby allies with enhanced capabilities!`
-              );
+              try {
+                const storeEvos = state.pieceEvolutions as any;
+                const active =
+                  storeEvos && storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3;
+                if (active) {
+                  get().addToGameLog(
+                    `✨ Consecrated bishop empowers nearby allies with enhanced capabilities!`
+                  );
+                } else {
+                  console.log(
+                    `🛑 Skipping consecrated bishop player log for ${move.to}: consecration not active in store`
+                  );
+                }
+              } catch (err) {
+                console.warn(
+                  'Error checking consecrate activity for game log (skipping log):',
+                  err
+                );
+                // Skip logging on error to avoid false positives
+              }
             }
 
             setTimeout(() => {
-              if (renderer.triggerBishopConsecrateVFX) {
-                renderer.triggerBishopConsecrateVFX(move.to);
+              try {
+                const active =
+                  state.pieceEvolutions.bishop &&
+                  (state.pieceEvolutions.bishop.consecrationTurns || 3) < 3;
+                if (active && renderer.triggerBishopConsecrateVFX) {
+                  renderer.triggerBishopConsecrateVFX(move.to);
+                }
+              } catch (err) {
+                if (renderer.triggerBishopConsecrateVFX)
+                  renderer.triggerBishopConsecrateVFX(move.to);
               }
             }, 250);
           }
@@ -2895,12 +3212,36 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           console.log(`👑 Queen dominance affects enemy pieces: ${move.to}`);
 
           if (playerColor === 'w') {
-            get().addToGameLog(`👑 Your queen's dominance restricts enemy movement options!`);
+            try {
+              const storeEvos = state.pieceEvolutions as any;
+              const active =
+                storeEvos && storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1;
+              if (active) {
+                get().addToGameLog(`👑 Your queen's dominance restricts enemy movement options!`);
+              } else {
+                console.log(
+                  `🛑 Skipping queen dominance player log at ${move.to}: dominance not active in store`
+                );
+              }
+            } catch (err) {
+              console.warn(
+                'Error checking queen dominance activity for game log (skipping log):',
+                err
+              );
+              // Skip logging on error to avoid false positives
+            }
           }
 
           setTimeout(() => {
-            if (renderer.triggerQueenDominanceVFX) {
-              renderer.triggerQueenDominanceVFX(move.to);
+            try {
+              const active =
+                state.pieceEvolutions.queen &&
+                (state.pieceEvolutions.queen.dominanceAuraRange || 1) > 1;
+              if (active && renderer.triggerQueenDominanceVFX) {
+                renderer.triggerQueenDominanceVFX(move.to);
+              }
+            } catch (err) {
+              if (renderer.triggerQueenDominanceVFX) renderer.triggerQueenDominanceVFX(move.to);
             }
           }, 100);
         }
@@ -2954,6 +3295,58 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       getEnhancedValidMoves: (square?: string) => {
         const state = get();
 
+        // Reentrancy guard: if engine code calls back into this method while
+        // validating enhanced moves, return raw engine moves to avoid
+        // recursive generation and mismatch.
+        if (_inEnhancedMoveGen) {
+          console.log(
+            '⛔ Reentrant enhanced move generation detected, returning minimal canonical + dash moves'
+          );
+          // Return canonical chess.js moves plus knight-dash targets (if engine
+          // evolution declares them) so engine-side validation can find
+          // dash targets without causing recursion.
+          const chess = chessEngine.chess;
+          const standardRaw = chess.moves({ square: square as any, verbose: true }) || [];
+          const canonical: Move[] = (standardRaw as any[]).map(m => ({
+            from: m.from as string,
+            to: m.to as string,
+            promotion: (m as any).promotion as any,
+            san: (m as any).san as any,
+            flags: (m as any).flags as any,
+          }));
+
+          // If caller supplied a square and the engine evolution lists knight-dash,
+          // include those targets as properly-typed Move entries.
+          if (square) {
+            const evo = chessEngine.getPieceEvolution(square as any);
+            if (
+              evo &&
+              evo.abilities &&
+              evo.abilities.some((a: any) => {
+                const id = String(a.id || '').toLowerCase();
+                return id === 'knight-dash' || id === 'dash';
+              })
+            ) {
+              const dashTargets = get().generateKnightDashMoves(square);
+              const dashMoves: Move[] = dashTargets.map(
+                (t: string) =>
+                  ({
+                    from: square as string,
+                    to: t,
+                    promotion: undefined,
+                    san: `N${t}`,
+                    flags: '',
+                    enhanced: 'knight-dash',
+                  }) as Move
+              );
+              canonical.push(...dashMoves);
+            }
+          }
+
+          return canonical;
+        }
+        _inEnhancedMoveGen = true;
+
         console.log(`🎯 Getting enhanced moves for square: ${square}`);
 
         // Get base moves from chess engine (which now includes evolution effects)
@@ -2994,6 +3387,79 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
         const enhancedMoves = [...moves];
 
+        // Determine the set of standard chess.js moves so we can detect
+        // engine-side enhanced moves that were appended by the engine's
+        // internal evolution system. If the player has no active abilities
+        // in their `pieceEvolutions` for this piece, hide any non-standard
+        // (engine-provided) moves to avoid exposing unowned evolutions.
+        const standardRaw = chess.moves({ square: square as any, verbose: true }) || [];
+
+        // If there are evolution abilities recorded but none are active in the
+        // player's store, filter down to only the standard moves.
+        if (pieceEvolution && pieceEvolution.abilities.length > 0) {
+          // Check if any ability for this evolution is considered active
+          const storeEvos = state.pieceEvolutions as any;
+          let anyAbilityActive = false;
+          try {
+            for (const ability of pieceEvolution.abilities) {
+              const id = String(ability.id || '').toLowerCase();
+              switch (id) {
+                case 'knight-dash':
+                case 'dash':
+                  if (storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1)
+                    anyAbilityActive = true;
+                  break;
+                case 'enhanced-march':
+                  if (storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1)
+                    anyAbilityActive = true;
+                  break;
+                case 'breakthrough':
+                case 'diagonal-move':
+                  if (storeEvos.pawn && (storeEvos.pawn.resilience || 0) > 0)
+                    anyAbilityActive = true;
+                  break;
+                case 'bishop-consecrate':
+                case 'consecration':
+                  if (storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3)
+                    anyAbilityActive = true;
+                  break;
+                case 'rook-entrench':
+                case 'entrenchment':
+                  if (storeEvos.rook && (storeEvos.rook.entrenchThreshold || 3) < 3)
+                    anyAbilityActive = true;
+                  break;
+                case 'queen-dominance':
+                case 'dominance':
+                  if (storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1)
+                    anyAbilityActive = true;
+                  break;
+                default:
+                  anyAbilityActive = true; // Be permissive for unknown abilities
+              }
+              if (anyAbilityActive) break;
+            }
+          } catch (err) {
+            anyAbilityActive = true; // conservative fallback
+          }
+
+          if (!anyAbilityActive) {
+            // No active abilities in the player's store — return canonical
+            // chess.js moves only. This avoids any engine-provided enhanced
+            // destinations leaking into the UI when the player hasn't
+            // unlocked the ability.
+            const canonical = (standardRaw as any[]).map(m => ({
+              from: square,
+              to: m.to,
+              promotion: m.promotion as any,
+              san: m.san,
+              flags: m.flags,
+            }));
+            enhancedMoves.length = 0;
+            enhancedMoves.push(...canonical);
+            console.log(`🔒 No active abilities for ${square}; showing only canonical moves.`);
+          }
+        }
+
         // **ENHANCED: Use chess engine evolution data for abilities**
         if (pieceEvolution && pieceEvolution.abilities.length > 0) {
           console.log(
@@ -3001,7 +3467,81 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           );
 
           for (const ability of pieceEvolution.abilities) {
+            // Cross-check that the ability actually corresponds to an unlocked/active
+            // evolution attribute in the player's `pieceEvolutions` store. This avoids
+            // showing ability-derived moves when the player hasn't unlocked the
+            // corresponding evolution.
+            const storeEvos = state.pieceEvolutions as any;
+            const abilityId = String(ability.id || '').toLowerCase();
+
+            let abilityActive = true; // default to true for unknown/third-party abilities
+
+            try {
+              switch (abilityId) {
+                case 'knight-dash':
+                case 'dash':
+                  abilityActive = storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                  break;
+                case 'enhanced-march':
+                  abilityActive = storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1;
+                  break;
+                case 'breakthrough':
+                case 'diagonal-move':
+                  abilityActive = storeEvos.pawn && (storeEvos.pawn.resilience || 0) > 0;
+                  break;
+                case 'extended-range':
+                  // Consider extended-range active if the piece type has a relevant bonus
+                  if (piece.type === 'n')
+                    abilityActive = storeEvos.knight && (storeEvos.knight.movementRange || 0) > 0;
+                  else if (piece.type === 'b')
+                    abilityActive = storeEvos.bishop && (storeEvos.bishop.snipeRange || 1) > 1;
+                  else if (piece.type === 'r')
+                    abilityActive = storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1;
+                  else if (piece.type === 'q')
+                    abilityActive =
+                      storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1;
+                  break;
+                case 'consecration':
+                case 'bishop-consecrate':
+                  abilityActive = storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3;
+                  break;
+                case 'entrenchment':
+                case 'rook-entrench':
+                  abilityActive = storeEvos.rook && (storeEvos.rook.entrenchThreshold || 3) < 3;
+                  break;
+                case 'dominance':
+                case 'queen-dominance':
+                  abilityActive = storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1;
+                  break;
+                default:
+                  abilityActive = true; // unknown abilities: don't block (covers tree-provided abilities)
+              }
+            } catch (err) {
+              console.warn('Ability activation check failed, falling back to allow:', err);
+              abilityActive = true;
+            }
+
+            if (!abilityActive) {
+              console.log(
+                `⛔ Skipping ability '${ability.id}' for ${square} because it is not active in store`
+              );
+              continue;
+            }
+
             const additionalMoves = get().generateAbilityMoves(square, ability, piece.type);
+            // Special-case: knight-dash ability uses a legacy generator that
+            // returns strings; if the ability is a knight-dash and no
+            // moves were returned above, call the dedicated generator.
+            if (
+              (abilityId === 'knight-dash' || abilityId === 'dash') &&
+              (!Array.isArray(additionalMoves) || additionalMoves.length === 0)
+            ) {
+              const dashTargets = get().generateKnightDashMoves(square);
+              // Convert to { to, flags } shape to match other generators
+              const dashMoves = dashTargets.map(t => ({ to: t, flags: '' }));
+              // Merge
+              (additionalMoves as any[]).push(...dashMoves);
+            }
             console.log(
               `🎆 Ability ${ability.id} generated ${additionalMoves.length} additional moves:`,
               additionalMoves.map(m => m.to)
@@ -3269,10 +3809,18 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         });
 
         const totalEnhanced = filteredEnhancedMoves.filter(m => m.enhanced).length;
-        // Safety: ensure we didn't accidentally drop any base legal moves from the engine.
-        // Sometimes enhanced filtering can remove destinations; merge any missing base moves back in.
+        // Safety: ensure we didn't accidentally drop any canonical chess.js base moves.
+        // Use `standardRaw` (the raw chess.js moves) as the authoritative base list so
+        // we don't accidentally reintroduce engine-only enhanced destinations.
         const finalDestinations = filteredEnhancedMoves.map(m => m.to);
-        const missingBaseMoves = moves.filter(m => !finalDestinations.includes(m.to));
+        const canonicalMoves = (standardRaw as any[]).map(m => ({
+          from: square,
+          to: m.to,
+          promotion: m.promotion as any,
+          san: m.san,
+          flags: m.flags,
+        }));
+        const missingBaseMoves = canonicalMoves.filter(m => !finalDestinations.includes(m.to));
         if (missingBaseMoves.length > 0) {
           console.log(
             `🔁 Re-adding ${missingBaseMoves.length} missing base moves to avoid hiding default moves:`,
@@ -3283,10 +3831,35 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             filteredEnhancedMoves.push(m as any);
           });
         }
+        // Special ensure: if the store indicates the player's knight dash is active,
+        // make sure any canonical dash targets (from our generator) are present
+        // in the final set — but only if the engine considers them legal.
+        try {
+          const storeEvos = state.pieceEvolutions as any;
+          if (piece.type === 'n' && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1) {
+            const dashTargets = get().generateKnightDashMoves(square);
+            for (const t of dashTargets) {
+              if (!filteredEnhancedMoves.some(m => m.to === t)) {
+                // Append dash target directly — trust the store gating decision.
+                filteredEnhancedMoves.push({
+                  from: square,
+                  to: t,
+                  san: `N${t}`,
+                  flags: chess.get(t as any) ? 'c' : '',
+                  enhanced: 'knight-dash',
+                } as any);
+                console.log(`✨ Appended dash target (store active): ${t}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to re-add dash targets:', err);
+        }
         console.log(
           `🎯 Enhanced moves for ${piece.type} at ${square}: ${moves.length} → ${filteredEnhancedMoves.length} moves (${totalEnhanced} enhanced)`
         );
 
+        _inEnhancedMoveGen = false;
         return filteredEnhancedMoves;
       },
 
@@ -3985,13 +4558,22 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           // Update manual mode piece states
           get().updateManualModePieceStatesAfterMove(dashResult.move, 'w');
 
-          // Trigger VFX
+          // Trigger VFX (only if knight dash is active in store evolutions)
           const renderer = (window as any).chronoChessRenderer;
           if (renderer) {
             setTimeout(() => {
-              if (renderer.triggerKnightDashVFX) {
-                renderer.triggerKnightDashVFX(fromSquare, selectedMove.to);
+              try {
+                const active =
+                  state.pieceEvolutions.knight &&
+                  (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                if (active && renderer.triggerKnightDashVFX) {
+                  renderer.triggerKnightDashVFX(fromSquare, selectedMove.to);
+                }
+              } catch (err) {
+                if (renderer.triggerKnightDashVFX)
+                  renderer.triggerKnightDashVFX(fromSquare, selectedMove.to);
               }
+
               // Update the 3D board to show the dash move
               if (renderer.updateBoard) {
                 renderer.updateBoard(newGameState);
@@ -4632,7 +5214,7 @@ useGameStore.subscribe(
 // Note: initializeGameStore is now in initialization.ts
 
 // Auto-save on game state changes (debounced)
-let saveDebounceTimer: NodeJS.Timeout | null = null;
+let saveDebounceTimer: number | null = null;
 useGameStore.subscribe(
   state => [
     state.game,

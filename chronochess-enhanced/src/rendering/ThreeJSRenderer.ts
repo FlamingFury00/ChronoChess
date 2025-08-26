@@ -670,7 +670,7 @@ export class ThreeJSRenderer {
           evolution.visualModifications = pe.visualModifications.slice();
         }
       }
-    } catch (err) {
+    } catch {
       // ignore; fall back to default evolution data
     }
 
@@ -1863,6 +1863,34 @@ export class ThreeJSRenderer {
         const material = squareMesh.material as THREE.MeshStandardMaterial;
         material.color.setHex(0x4a90e2);
         material.emissive.setHex(0x1a4a7a);
+      }
+    }
+  }
+
+  /**
+   * Highlight a square with an error/red color (used for disallowed selections).
+   */
+  highlightSquareError(square: string | null): void {
+    // Clear previous selection
+    if (this.selectedSquare) {
+      const prevSquareMesh = this.boardSquares.get(this.selectedSquare);
+      const originalMaterial = this.originalMaterials.get(this.selectedSquare);
+      if (prevSquareMesh && originalMaterial) {
+        const material = prevSquareMesh.material as THREE.MeshStandardMaterial;
+        material.color.copy(originalMaterial.color);
+        material.emissive.copy(originalMaterial.emissive);
+      }
+    }
+
+    this.selectedSquare = square;
+
+    if (square) {
+      const squareMesh = this.boardSquares.get(square);
+      if (squareMesh) {
+        const material = squareMesh.material as THREE.MeshStandardMaterial;
+        // Error red and deeper emissive
+        material.color.setHex(0xff4d4d);
+        material.emissive.setHex(0x7a0000);
       }
     }
   }

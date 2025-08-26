@@ -69,7 +69,7 @@ export class AudioManager {
         // function instead of a constructor. Try calling as a function.
         try {
           this.audioContext = AudioCtor(ctorOptions);
-        } catch (err) {
+        } catch {
           throw e; // rethrow original constructor error
         }
       }
