@@ -252,7 +252,7 @@ const DEFAULT_SAVE_KEY = 'chronochess_save';
 const MAX_UNDO_STACK_SIZE = 50;
 
 // Auto-save timer reference
-let autoSaveTimer: number | null = null;
+let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
 // Core system instances
 const resourceManager = new ResourceManager();
@@ -5214,7 +5214,7 @@ useGameStore.subscribe(
 // Note: initializeGameStore is now in initialization.ts
 
 // Auto-save on game state changes (debounced)
-let saveDebounceTimer: number | null = null;
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 useGameStore.subscribe(
   state => [
     state.game,
