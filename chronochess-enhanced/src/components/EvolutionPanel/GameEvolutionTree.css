@@ -1,0 +1,347 @@
+.game-evolution-tree {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-evolution-tree__header {
+  padding: 1rem;
+  background: var(--panel-header-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.game-evolution-tree__header h3 {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.game-evolution-tree__stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.game-evolution-tree__container {
+  flex: 1;
+  min-height: 0;
+}
+
+.game-evolution-tree__legend {
+  background: rgba(30, 41, 59, 0.9);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.legend-icon {
+  font-weight: bold;
+  min-width: 16px;
+  text-align: center;
+}
+
+.legend-icon--unlocked {
+  color: var(--success-color);
+}
+
+.legend-icon--available {
+  color: var(--accent-primary);
+}
+
+.legend-icon--locked {
+  color: var(--warning-color);
+}
+
+.legend-icon--requires-evolution {
+  color: var(--warning-color);
+  background: rgba(255, 193, 7, 0.2);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+}
+
+/* Evolution Node Styles */
+.evolution-node {
+  background: rgba(30, 35, 45, 0.9);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  width: 160px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: visible;
+}
+
+.evolution-node:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.evolution-node--common {
+  border-color: #9ca3af;
+}
+
+.evolution-node--uncommon {
+  border-color: #10b981;
+}
+
+.evolution-node--rare {
+  border-color: #3b82f6;
+}
+
+.evolution-node--epic {
+  border-color: #8b5cf6;
+}
+
+.evolution-node--legendary {
+  border-color: #f59e0b;
+}
+
+.evolution-node--requires-evolution::before {
+  content: '⚠';
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--warning-color);
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  z-index: 2;
+}
+
+.evolution-node__core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.evolution-node__requirement-preview {
+  background: var(--warning-color);
+  color: white;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.evolution-node__tier {
+  font-size: 0.8rem;
+  font-weight: bold;
+  color: var(--text-secondary);
+}
+
+.evolution-node__status-icon {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.evolution-node__icon--unlocked {
+  color: var(--success-color);
+}
+
+.evolution-node__icon--available {
+  color: var(--accent-primary);
+}
+
+.evolution-node__icon--locked {
+  color: var(--warning-color);
+}
+
+.evolution-node__rarity-indicator {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rarity-color);
+}
+
+.evolution-node__details {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 35, 45, 0.95);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  width: 300px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  margin-top: 8px;
+}
+
+.evolution-node__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.evolution-node__name {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.evolution-node__rarity-badge {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.evolution-node__rarity-badge--common {
+  background: #9ca3af;
+  color: #000;
+}
+
+.evolution-node__rarity-badge--uncommon {
+  background: #10b981;
+  color: #fff;
+}
+
+.evolution-node__rarity-badge--rare {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.evolution-node__rarity-badge--epic {
+  background: #8b5cf6;
+  color: #fff;
+}
+
+.evolution-node__rarity-badge--legendary {
+  background: #f59e0b;
+  color: #000;
+}
+
+.evolution-node__description {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.evolution-node__cost,
+.evolution-node__requirements,
+.evolution-node__effects {
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+
+.evolution-node__requirements strong,
+.evolution-node__effects strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.evolution-node__requirement,
+.evolution-node__effect {
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+}
+
+.evolution-node__actions {
+  margin-top: 16px;
+}
+
+.evolution-node__status-text {
+  text-align: center;
+  padding: 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.evolution-node__status-text--unlocked {
+  background: rgba(76, 175, 80, 0.3);
+  color: var(--success-color);
+}
+
+.evolution-node__status-text--locked {
+  background: rgba(244, 67, 54, 0.3);
+  color: var(--warning-color);
+}
+
+.evolution-node__unlock-btn {
+  width: 100%;
+}
+
+.evolution-node__glow {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 10px;
+  background: var(--rarity-color);
+  opacity: 0.4;
+  z-index: -1;
+  animation: glow-pulse 2s infinite;
+}
+
+.evolution-node__pulse {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 12px;
+  border: 2px solid var(--accent-primary);
+  opacity: 0.9;
+  z-index: -2;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes glow-pulse {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+}

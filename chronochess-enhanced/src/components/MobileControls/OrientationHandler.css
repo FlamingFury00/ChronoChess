@@ -1,0 +1,283 @@
+/* Modern OrientationHandler Component CSS */
+:root {
+  --orientation: portrait;
+  --rotation-angle: 0deg;
+}
+
+.orientation-handler {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.orientation-handler__content {
+  width: 100%;
+  height: 100%;
+  transition: all var(--duration-slow) var(--ease-out);
+}
+
+/* Orientation-specific styles with design system */
+.orientation-handler--portrait {
+  /* Portrait-specific adjustments with enhanced layout - implemented in media queries below */
+}
+
+.orientation-handler--landscape {
+  /* Landscape-specific adjustments with enhanced layout - implemented in media queries below */
+}
+
+/* Enhanced Transition Overlay */
+.orientation-handler__transition-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  animation: fadeIn var(--duration-normal) var(--ease-out);
+}
+
+.orientation-handler__transition-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(122, 162, 247, 0.3);
+  border-top: 3px solid var(--accent-primary);
+  border-radius: var(--radius-full);
+  animation: spin var(--duration-slowest) linear infinite;
+  margin-bottom: var(--spacing-lg);
+  box-shadow: 0 0 16px rgba(122, 162, 247, 0.4);
+}
+
+.orientation-handler__transition-text {
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  text-align: center;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-quaternary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Enhanced Debug Info */
+.orientation-handler__debug {
+  position: fixed;
+  top: var(--spacing-sm);
+  left: var(--spacing-sm);
+  background: var(--bg-glass-strong);
+  color: var(--text-primary);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  z-index: calc(var(--z-modal) + 1);
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 12px var(--shadow-secondary),
+    0 0 0 1px rgba(122, 162, 247, 0.1);
+}
+
+.orientation-handler__debug div {
+  margin-bottom: var(--spacing-xs);
+  line-height: var(--line-height-tight);
+}
+
+.orientation-handler__debug div:last-child {
+  margin-bottom: 0;
+}
+
+/* Enhanced Global Orientation Classes */
+body.orientation-portrait {
+  /* Global portrait styles with design system integration - reserved for future global adjustments */
+}
+
+body.orientation-landscape {
+  /* Global landscape styles with design system integration - reserved for future global adjustments */
+}
+
+/* Enhanced Orientation-specific Layout Adjustments */
+@media (orientation: portrait) {
+  .orientation-handler--portrait .orientation-handler__content {
+    /* Portrait layout optimizations with design system */
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+}
+
+@media (orientation: landscape) {
+  .orientation-handler--landscape .orientation-handler__content {
+    /* Landscape layout optimizations with design system */
+    flex-direction: row;
+    gap: var(--spacing-lg);
+  }
+}
+
+/* Enhanced Device-specific Adjustments */
+@media (max-width: 480px) {
+  .orientation-handler--landscape {
+    /* Small device landscape adjustments - reserved for future specific mobile landscape optimizations */
+  }
+
+  .orientation-handler__transition-text {
+    font-size: var(--font-size-sm);
+  }
+
+  .orientation-handler__transition-spinner {
+    width: 32px;
+    height: 32px;
+    border-width: 2px;
+  }
+
+  .orientation-handler__debug {
+    top: var(--spacing-xs);
+    left: var(--spacing-xs);
+    padding: var(--spacing-xs);
+    font-size: var(--font-size-xxs);
+  }
+}
+
+/* Enhanced Tablet Adjustments */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .orientation-handler--portrait {
+    /* Tablet portrait adjustments with enhanced spacing */
+    padding: var(--spacing-lg);
+  }
+
+  .orientation-handler--landscape {
+    /* Tablet landscape adjustments with enhanced spacing */
+    padding: var(--spacing-xl);
+  }
+
+  .orientation-handler__transition-text {
+    font-size: var(--font-size-lg);
+  }
+
+  .orientation-handler__transition-spinner {
+    width: 48px;
+    height: 48px;
+    border-width: 4px;
+  }
+}
+
+/* Enhanced Safe Area Support for Modern Devices */
+@supports (padding: max(0px)) {
+  .orientation-handler--portrait {
+    padding-top: max(var(--spacing-md), env(safe-area-inset-top));
+    padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom));
+    padding-left: max(var(--spacing-sm), env(safe-area-inset-left));
+    padding-right: max(var(--spacing-sm), env(safe-area-inset-right));
+  }
+
+  .orientation-handler--landscape {
+    padding-top: max(var(--spacing-sm), env(safe-area-inset-top));
+    padding-bottom: max(var(--spacing-sm), env(safe-area-inset-bottom));
+    padding-left: max(var(--spacing-lg), env(safe-area-inset-left));
+    padding-right: max(var(--spacing-lg), env(safe-area-inset-right));
+  }
+}
+
+/* Enhanced Animations with Design System */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(16px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Enhanced Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .orientation-handler__content {
+    transition: none;
+  }
+
+  .orientation-handler__transition-overlay {
+    animation: none;
+    backdrop-filter: blur(16px);
+  }
+
+  .orientation-handler__transition-spinner {
+    animation: none;
+    border-top-color: var(--accent-primary);
+  }
+}
+
+/* Enhanced High Contrast Mode */
+@media (prefers-contrast: high) {
+  .orientation-handler__transition-overlay {
+    background: rgba(0, 0, 0, 0.95);
+    backdrop-filter: none;
+  }
+
+  .orientation-handler__debug {
+    background: #000000;
+    border: 2px solid #ffffff;
+    color: #ffffff;
+  }
+
+  .orientation-handler__transition-text {
+    background: none;
+    -webkit-text-fill-color: #ffffff;
+    color: #ffffff;
+  }
+
+  .orientation-handler__transition-spinner {
+    border-color: #ffffff;
+    border-top-color: #ffffff;
+    box-shadow: none;
+  }
+}
+
+/* Enhanced Print Styles */
+@media print {
+  .orientation-handler__transition-overlay,
+  .orientation-handler__debug {
+    display: none !important;
+  }
+
+  .orientation-handler {
+    background: white;
+    color: black;
+  }
+
+  .orientation-handler__content {
+    transition: none;
+  }
+}
+
+/* Touch Device Optimizations */
+@media (pointer: coarse) {
+  .orientation-handler__transition-overlay {
+    padding: var(--spacing-xl);
+  }
+
+  .orientation-handler__transition-spinner {
+    width: 56px;
+    height: 56px;
+    border-width: 4px;
+  }
+
+  .orientation-handler__transition-text {
+    font-size: var(--font-size-lg);
+    line-height: var(--line-height-relaxed);
+  }
+}

@@ -1,0 +1,181 @@
+.app {
+  position: relative;
+  width: 100vw;
+  min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+
+  /* Modern background with subtle animation */
+  background:
+    radial-gradient(circle at 20% 50%, rgba(122, 162, 247, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(158, 206, 106, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 80%, rgba(187, 154, 247, 0.1) 0%, transparent 50%),
+    linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%);
+
+  /* Scene transition container */
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+/* Main content area */
+.app__content {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Mobile navigation - hidden by default */
+.app__mobile-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app__mobile-nav {
+    display: block;
+  }
+
+  .app__content {
+    padding-bottom: 80px; /* Space for bottom navigation */
+  }
+}
+
+.app::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(2px 2px at 30px 40px, rgba(122, 162, 247, 0.3), transparent),
+    radial-gradient(1px 1px at 80px 20px, rgba(158, 206, 106, 0.2), transparent),
+    radial-gradient(1px 1px at 50px 90px, rgba(187, 154, 247, 0.25), transparent);
+  background-size:
+    200px 200px,
+    150px 150px,
+    180px 180px;
+  animation: particles-drift 30s linear infinite;
+  opacity: 0.6;
+  z-index: 0;
+  pointer-events: none;
+}
+
+@keyframes particles-drift {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translate(-100px, -100px) rotate(360deg);
+    opacity: 0.6;
+  }
+}
+
+/* Scene transitions */
+.app .scene {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100vh;
+  animation: sceneEnter var(--duration-slow) var(--ease-out);
+}
+
+@keyframes sceneEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Enhanced responsive design */
+@media (max-width: 768px) {
+  .app {
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+
+    /* Optimize for mobile performance */
+    transform: translateZ(0);
+    will-change: transform;
+  }
+
+  .app::before {
+    animation-duration: 60s; /* Slower on mobile for performance */
+  }
+}
+
+@media (max-width: 480px) {
+  .app {
+    /* Simplify background for very small screens */
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  }
+
+  .app::before {
+    opacity: 0.3;
+  }
+}
+
+/* High DPI displays optimization */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+  .app {
+    /* Ensure crisp rendering on retina displays */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .app::before {
+    animation: none;
+  }
+
+  .app .scene {
+    animation-duration: var(--duration-fast);
+  }
+
+  @keyframes sceneEnter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .app {
+    background: var(--bg-primary);
+  }
+
+  .app::before {
+    display: none;
+  }
+}
+
+/* Focus management for accessibility */
+/* .app:focus-within - reserved for future focus enhancements */
+
+/* Print styles */
+@media print {
+  .app {
+    background: white;
+    color: black;
+  }
+
+  .app::before {
+    display: none;
+  }
+}

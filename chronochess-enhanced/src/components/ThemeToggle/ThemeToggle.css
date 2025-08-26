@@ -1,0 +1,343 @@
+/* Modern Theme Toggle Component */
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+/* Button variant */
+.theme-toggle--button {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.theme-toggle--button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(122, 162, 247, 0.1) 50%,
+    transparent 100%
+  );
+  transition: left var(--duration-slow) var(--ease-out);
+  z-index: 0;
+}
+
+.theme-toggle--button:hover {
+  background: var(--bg-glass-strong);
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 12px var(--shadow-secondary),
+    0 0 0 1px rgba(122, 162, 247, 0.1);
+}
+
+.theme-toggle--button:hover::before {
+  left: 100%;
+}
+
+.theme-toggle--button:active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: var(--duration-fast);
+}
+
+/* Size variants */
+.theme-toggle--small {
+  padding: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
+}
+
+.theme-toggle--medium {
+  padding: var(--spacing-sm);
+  font-size: var(--font-size-base);
+}
+
+.theme-toggle--large {
+  padding: var(--spacing-md);
+  font-size: var(--font-size-lg);
+  border-radius: var(--radius-lg);
+}
+
+/* Icon styling */
+.theme-toggle__icon {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-normal) var(--ease-out);
+  filter: drop-shadow(0 0 8px var(--accent-primary));
+}
+
+.theme-toggle--button:hover .theme-toggle__icon {
+  transform: scale(1.1) rotate(15deg);
+  filter: drop-shadow(0 0 12px var(--accent-primary));
+}
+
+/* Label styling */
+.theme-toggle__label {
+  position: relative;
+  z-index: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  transition: color var(--duration-normal) var(--ease-out);
+  text-transform: capitalize;
+}
+
+.theme-toggle--button:hover .theme-toggle__label {
+  color: var(--text-primary);
+}
+
+/* Switch variant */
+.theme-toggle--switch {
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.theme-toggle__switch-container {
+  position: relative;
+  display: flex;
+  background: var(--bg-glass-strong);
+  border-radius: var(--radius-full);
+  padding: var(--spacing-xs);
+}
+
+.theme-toggle__switch-option {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  font-size: var(--font-size-sm);
+  color: var(--text-tertiary);
+}
+
+.theme-toggle__switch-option:hover {
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.theme-toggle__switch-option--active {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.theme-toggle__switch-indicator {
+  position: absolute;
+  top: var(--spacing-xs);
+  left: var(--spacing-xs);
+  width: calc(33.333% - var(--spacing-xs));
+  height: calc(100% - var(--spacing-xs) * 2);
+  background: var(--accent-primary);
+  border-radius: var(--radius-full);
+  transition: transform var(--duration-normal) var(--ease-out);
+  z-index: 1;
+  box-shadow:
+    0 2px 8px rgba(122, 162, 247, 0.3),
+    0 0 0 1px rgba(122, 162, 247, 0.1);
+}
+
+.theme-toggle__switch-icon {
+  font-size: var(--font-size-base);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.theme-toggle__switch-option--active .theme-toggle__switch-icon {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+  transform: scale(1.1);
+}
+
+.theme-toggle__switch-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Dropdown variant */
+.theme-toggle--dropdown {
+  position: relative;
+}
+
+.theme-toggle__select {
+  appearance: none;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+
+  /* Custom dropdown arrow */
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%),
+    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) calc(1em - 2px),
+    calc(100% - 8px) calc(1em - 2px);
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+}
+
+.theme-toggle__select:hover {
+  background-color: var(--bg-glass-strong);
+  border-color: var(--accent-primary);
+  box-shadow: 0 2px 8px var(--shadow-secondary);
+}
+
+.theme-toggle__select:focus {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(122, 162, 247, 0.2);
+}
+
+/* Theme-specific styling */
+/* Light theme specific adjustments - reserved for future styling */
+
+.theme-toggle--light .theme-toggle__icon {
+  filter: drop-shadow(0 0 8px var(--accent-highlight));
+}
+
+.theme-toggle--light .theme-toggle--button:hover .theme-toggle__icon {
+  filter: drop-shadow(0 0 12px var(--accent-highlight));
+}
+
+/* Dark theme specific adjustments - reserved for future styling */
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .theme-toggle--button {
+    min-height: 44px; /* Ensure touch target size */
+    min-width: 44px;
+  }
+
+  .theme-toggle--switch {
+    padding: var(--spacing-sm);
+  }
+
+  .theme-toggle__switch-option {
+    padding: var(--spacing-sm);
+  }
+
+  .theme-toggle__switch-label {
+    display: none; /* Hide labels on mobile to save space */
+  }
+
+  /* Remove hover effects on touch devices */
+  @media (hover: none) {
+    .theme-toggle--button::before {
+      display: none;
+    }
+
+    .theme-toggle--button:hover {
+      transform: none;
+    }
+
+    .theme-toggle--button:hover .theme-toggle__icon {
+      transform: none;
+    }
+  }
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle,
+  .theme-toggle__icon,
+  .theme-toggle__switch-option,
+  .theme-toggle__switch-indicator,
+  .theme-toggle__select {
+    transition: none;
+  }
+
+  .theme-toggle--button::before {
+    display: none;
+  }
+
+  .theme-toggle--button:hover .theme-toggle__icon {
+    transform: none;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .theme-toggle--button,
+  .theme-toggle--switch,
+  .theme-toggle__select {
+    border-width: 2px;
+    background: var(--bg-secondary);
+  }
+
+  .theme-toggle__switch-indicator {
+    background: var(--text-primary);
+    border: 2px solid var(--accent-primary);
+  }
+}
+
+/* Focus styles for keyboard navigation */
+.theme-toggle--button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(122, 162, 247, 0.2);
+}
+
+.theme-toggle__switch-option:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+/* Animation classes for theme transitions */
+.theme-transition {
+  transition:
+    background-color var(--duration-normal) var(--ease-out),
+    border-color var(--duration-normal) var(--ease-out),
+    color var(--duration-normal) var(--ease-out);
+}
+
+/* Loading state */
+.theme-toggle--loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.theme-toggle--loading .theme-toggle__icon {
+  animation: spin var(--duration-slowest) linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
