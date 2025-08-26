@@ -10,7 +10,7 @@ function App() {
 
   // Initialize the game store and systems on app start
   useEffect(() => {
-    console.log('🚀 Initializing ChronoChess Enhanced...');
+    console.log('🚀 Initializing ChronoChess...');
 
     // Initialize game systems
     initializeGameStore();
@@ -18,7 +18,7 @@ function App() {
     // Ensure resource generation is running
     startResourceGeneration();
 
-    console.log('✅ ChronoChess Enhanced fully initialized!');
+    console.log('✅ ChronoChess fully initialized!');
 
     // Cleanup on unmount
     return () => {

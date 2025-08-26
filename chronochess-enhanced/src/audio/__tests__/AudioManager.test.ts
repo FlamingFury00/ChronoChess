@@ -96,7 +96,8 @@ describe('AudioManager', () => {
     });
 
     it('should throw error if initialization fails', async () => {
-      (AudioContext as any).mockImplementation(() => {
+      // Replace the existing AudioContext mock for this test only
+      (AudioContext as any).mockImplementationOnce(() => {
         throw new Error('AudioContext not supported');
       });
 
@@ -112,7 +113,7 @@ describe('AudioManager', () => {
     });
 
     it('should set master volume with smooth transition', () => {
-      const mockGain = mockAudioContext.createGain().gain;
+      const mockGain = (audioManager as any).masterGainNode.gain;
 
       audioManager.setMasterVolume(0.5, 0.2);
 
@@ -187,7 +188,7 @@ describe('AudioManager', () => {
       audioManager.createSpatialPanner('test-panner', config);
       audioManager.updateSpatialPosition('test-panner', { x: 5, y: 10, z: 15 });
 
-      const mockPanner = mockAudioContext.createPanner();
+      const mockPanner = (audioManager as any).spatialPannerNodes.get('test-panner');
       expect(mockPanner.positionX.linearRampToValueAtTime).toHaveBeenCalledWith(
         5,
         expect.any(Number)
@@ -229,9 +230,23 @@ describe('AudioManager', () => {
     });
 
     it('should register and retrieve sound effects', () => {
+      // Create a mock AudioBuffer with required properties
+      const mockBuffer: AudioBuffer = {
+        duration: 1,
+        length: 1024,
+        numberOfChannels: 1,
+        sampleRate: 44100,
+        getChannelData: vi.fn(() => new Float32Array(1024)),
+        copyFromChannel: vi.fn(),
+        copyToChannel: vi.fn(),
+        // The following are optional in some TS versions, but add for completeness
+        // These are no-ops for the mock
+        toJSON: vi.fn(),
+      } as any;
+
       const soundEffect = {
         id: 'test-sound',
-        buffer: mockAudioContext.createBuffer(),
+        buffer: mockBuffer,
         category: SoundCategory.PIECE_MOVEMENT,
         volume: 0.8,
         pitch: 1.2,

@@ -6,51 +6,59 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SpatialAudioController } from '../SpatialAudioController';
 import { audioManager } from '../AudioManager';
 
-// Mock AudioManager
-vi.mock('../AudioManager', () => ({
-  audioManager: {
-    getAudioContext: vi.fn().mockResolvedValue({
-      listener: {
-        positionX: { value: 0 },
-        positionY: { value: 0 },
-        positionZ: { value: 0 },
-        forwardX: { value: 0 },
-        forwardY: { value: 0 },
-        forwardZ: { value: 0 },
-        upX: { value: 0 },
-        upY: { value: 1 },
-        upZ: { value: 0 },
-      },
-      createBufferSource: vi.fn(() => ({
-        buffer: null,
-        playbackRate: { value: 1 },
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        start: vi.fn(),
-        onended: null,
+// Mock AudioManager with singleton source/gain objects so tests can inspect
+// the exact instance used by the code under test.
+vi.mock('../AudioManager', () => {
+  const mockSource = {
+    buffer: null,
+    playbackRate: { value: 1 },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    start: vi.fn(),
+    onended: null,
+  } as any;
+
+  const mockGain = {
+    gain: { value: 1 },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  } as any;
+
+  const mockAudioContext = {
+    listener: {
+      positionX: { value: 0 },
+      positionY: { value: 0 },
+      positionZ: { value: 0 },
+      forwardX: { value: 0 },
+      forwardY: { value: 0 },
+      forwardZ: { value: 0 },
+      upX: { value: 0 },
+      upY: { value: 1 },
+      upZ: { value: 0 },
+    },
+    createBufferSource: vi.fn(() => mockSource),
+    createGain: vi.fn(() => mockGain),
+  };
+
+  return {
+    audioManager: {
+      getAudioContext: vi.fn().mockResolvedValue(mockAudioContext),
+      createSpatialPanner: vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() })),
+      updateSpatialPosition: vi.fn(),
+      setSpatialAudioEnabled: vi.fn(),
+      getSoundEffect: vi.fn(() => ({
+        id: 'test-sound',
+        buffer: {} as AudioBuffer,
+        category: 'piece_movement',
+        volume: 0.8,
+        pitch: 1.0,
+        spatialEnabled: true,
       })),
-      createGain: vi.fn(() => ({
-        gain: { value: 1 },
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-      })),
-    }),
-    createSpatialPanner: vi.fn(() => ({
-      connect: vi.fn(),
-      disconnect: vi.fn(),
-    })),
-    updateSpatialPosition: vi.fn(),
-    setSpatialAudioEnabled: vi.fn(),
-    getSoundEffect: vi.fn(() => ({
-      id: 'test-sound',
-      buffer: {} as AudioBuffer,
-      category: 'piece_movement',
-      volume: 0.8,
-      pitch: 1.0,
-      spatialEnabled: true,
-    })),
-  },
-}));
+      // expose mocks for assertions if needed
+      __mocks: { mockSource, mockGain, mockAudioContext },
+    },
+  };
+});
 
 describe('SpatialAudioController', () => {
   let spatialController: SpatialAudioController;

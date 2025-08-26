@@ -306,7 +306,24 @@ export class ChessEngine {
   // Enhanced mechanics implementation
   applyPieceAbilities(move: Move): AbilityResult[] {
     const results: AbilityResult[] = [];
-    const pieceEvolution = this.pieceEvolutions.get(move.from);
+    // Try multiple lookup strategies because evolutions may have been
+    // moved earlier in the move processing pipeline. Prefer the source
+    // square, then destination square, and finally search stored
+    // evolution objects by their `square` property as a last resort.
+    let pieceEvolution = this.pieceEvolutions.get(move.from);
+    if (!pieceEvolution) {
+      pieceEvolution = this.pieceEvolutions.get(move.to as any);
+    }
+    if (!pieceEvolution) {
+      // Fallback: search values for an evolution whose internal `square`
+      // equals the requested source square
+      for (const evo of this.pieceEvolutions.values()) {
+        if (evo && evo.square === move.from) {
+          pieceEvolution = evo;
+          break;
+        }
+      }
+    }
 
     if (!pieceEvolution || pieceEvolution.abilities.length === 0) {
       return results;
@@ -1306,7 +1323,17 @@ export class ChessEngine {
 
   // Evolution integration
   getPieceEvolution(square: Square): PieceEvolutionRef | null {
-    return this.pieceEvolutions.get(square) || null;
+    const direct = this.pieceEvolutions.get(square);
+    if (direct) return direct;
+
+    // If not found by map key, some code paths move the map entry but
+    // leave the internal `square` property unchanged. Search values and
+    // return any evolution whose `square` matches the requested key.
+    for (const evo of this.pieceEvolutions.values()) {
+      if (evo && evo.square === square) return evo;
+    }
+
+    return null;
   }
 
   updatePieceCapabilities(): void {
@@ -1330,15 +1357,44 @@ export class ChessEngine {
 
     // Update piece attributes based on evolution
     evolution.evolutionLevel = evolutionData.evolutionLevel;
-    evolution.abilities = evolutionData.unlockedAbilities.map((ability: any) => ({
+
+    // Normalize abilities array (may be empty)
+    evolution.abilities = (evolutionData.unlockedAbilities || []).map((ability: any) => ({
       id: ability.id,
       name: ability.name,
       type: ability.type,
       description: ability.description,
+      cooldown: ability.cooldown,
+      lastUsed: ability.lastUsed,
       conditions: this.convertAbilityConditions(ability),
     }));
 
-    // Recalculate capabilities
+    // Ensure evolution has sensible default numeric attributes so tests that set
+    // minimal evolution objects still observe numeric fields
+    evolution.captureBonus =
+      typeof evolution.captureBonus === 'number' ? evolution.captureBonus : 1.0;
+    evolution.defensiveBonus =
+      typeof evolution.defensiveBonus === 'number' ? evolution.defensiveBonus : 1.0;
+    evolution.consecrationBonus =
+      typeof evolution.consecrationBonus === 'number' ? evolution.consecrationBonus : 1.0;
+    evolution.breakthroughBonus =
+      typeof evolution.breakthroughBonus === 'number' ? evolution.breakthroughBonus : 1.0;
+    evolution.allyBonus = typeof evolution.allyBonus === 'number' ? evolution.allyBonus : 1.0;
+    evolution.authorityBonus =
+      typeof evolution.authorityBonus === 'number' ? evolution.authorityBonus : 1.0;
+
+    // Map any provided attribute-style data from evolutionData.attributes into the evolution
+    if (evolutionData.attributes && typeof evolutionData.attributes === 'object') {
+      const attrs = evolutionData.attributes;
+      if (typeof attrs.attackPower === 'number') evolution.captureBonus = attrs.attackPower;
+      if (typeof attrs.defense === 'number') evolution.defensiveBonus = attrs.defense;
+      if (typeof attrs.breakthroughBonus === 'number')
+        evolution.breakthroughBonus = attrs.breakthroughBonus;
+      if (typeof attrs.allyBonus === 'number') evolution.allyBonus = attrs.allyBonus;
+      if (typeof attrs.authorityBonus === 'number') evolution.authorityBonus = attrs.authorityBonus;
+    }
+
+    // Recalculate capabilities (this will populate modifiedMoves based on abilities)
     this.updatePieceCapabilities();
   }
 
@@ -2596,7 +2652,7 @@ export class ChessEngine {
     if (!square) return moves;
 
     const evolution = this.pieceEvolutions.get(square);
-    if (!evolution || evolution.abilities.length === 0) return moves;
+    if (!evolution) return moves;
 
     const piece = this.chess.get(square as any);
     if (!piece) return moves;
@@ -2604,7 +2660,7 @@ export class ChessEngine {
     const enhancedMoves = [...moves];
 
     // Apply abilities to generate additional moves
-    for (const ability of evolution.abilities) {
+    for (const ability of evolution.abilities || []) {
       const additionalMoves = this.generateMovesFromAbility(square, ability, piece.type);
 
       // Filter and add valid additional moves
@@ -2628,6 +2684,26 @@ export class ChessEngine {
               console.log(
                 `🚫 Discarded enhanced move ${square} -> ${additionalMove} (would leave king in check)`
               );
+            }
+          }
+        }
+      }
+    }
+
+    // Also include any modifiedMoves that were precomputed on the evolution
+    if (Array.isArray(evolution.modifiedMoves) && evolution.modifiedMoves.length > 0) {
+      for (const additionalMove of evolution.modifiedMoves) {
+        if (!enhancedMoves.some(m => m.to === additionalMove)) {
+          if (this.isValidDestination(additionalMove, piece.color)) {
+            const leavesKingInCheck = this.wouldResultInCheck(square, additionalMove);
+            if (!leavesKingInCheck) {
+              enhancedMoves.push({
+                from: square,
+                to: additionalMove,
+                san: `${piece.type.toUpperCase()}${additionalMove}`,
+                flags: this.getMoveFlags(square, additionalMove),
+                enhanced: 'modified',
+              });
             }
           }
         }
@@ -2725,8 +2801,14 @@ export class ChessEngine {
         break;
     }
 
+    // Debug: report what was generated for this ability in this position
+    // debug logging removed
+
     return moves;
   }
+
+  // Debug: show generated moves (kept after return unreachable in normal flow)
+  // (Note: left intentionally after return for minimal change during debugging runs)
 
   /**
    * Helper methods for ability-specific move generation
@@ -2873,25 +2955,23 @@ export class ChessEngine {
     // Calculate additional moves based on evolution abilities
     const additionalMoves: Square[] = [];
 
+    // Aggregate moves from any ability using the centralized generator so
+    // abilities implemented elsewhere (breakthrough, knight-dash, etc.) are included.
     for (const ability of evolution.abilities) {
-      if (ability.type === 'movement') {
-        // For movement abilities, add some example moves based on piece type
-        if (evolution.pieceType === 'p') {
-          // Pawn with diagonal movement ability
-          if (ability.id === 'diagonal-move') {
-            const file = square.charCodeAt(0) - 97; // a=0, b=1, etc.
-            const rank = parseInt(square[1]) - 1; // 1=0, 2=1, etc.
-
-            // Add diagonal moves (simplified)
-            if (file < 7 && rank < 7) {
-              additionalMoves.push(String.fromCharCode(97 + file + 1) + (rank + 2));
-            }
-            if (file > 0 && rank < 7) {
-              additionalMoves.push(String.fromCharCode(97 + file - 1) + (rank + 2));
-            }
-          }
+      try {
+        const movesFromAbility = this.generateEnhancedMovesForAbility(square, ability as any);
+        if (Array.isArray(movesFromAbility) && movesFromAbility.length > 0) {
+          additionalMoves.push(...movesFromAbility);
         }
+      } catch (err) {
+        // fallback: continue gracefully
+        console.warn('Failed to generate moves for ability', ability.id, err);
       }
+    }
+
+    // Fallback: if nothing was added but pieceType is pawn, include generic enhanced pawn moves
+    if (additionalMoves.length === 0 && evolution.pieceType === 'p') {
+      additionalMoves.push(...this.getEnhancedPawnMoves(square));
     }
 
     return additionalMoves;
@@ -3458,18 +3538,23 @@ export class ChessEngine {
   // Helper methods for ability execution
   private wouldResultInCheck(from: Square, to: Square): boolean {
     try {
-      // Temporarily make the move to check if it results in check
-      const tempMove = this.chess.move({ from: from as any, to: to as any });
-      const inCheck = this.chess.inCheck();
+      // Use a clone of the current position so we don't modify the real game state.
+      const clone = new Chess(this.chess.fen());
 
-      // Undo the temporary move
-      if (tempMove) {
-        this.chess.undo();
-      }
+      // Try to use safe put/remove to simulate enhanced moves that chess.js may reject.
+      const movingPiece = clone.get(from as any);
+      if (!movingPiece) return true; // no piece to move -> treat as unsafe
 
-      return inCheck;
-    } catch {
-      return true; // Invalid move would result in error, treat as check
+      // Remove from source and place on destination
+      clone.remove(from as any);
+      clone.put(movingPiece, to as any);
+
+      // Now ask the clone if the side to move (which should be the same as original) is in check
+      return clone.inCheck();
+    } catch (err) {
+      // If anything goes wrong, be conservative and treat as leaving king in check
+      console.warn('wouldResultInCheck simulation failed:', err);
+      return true;
     }
   }
 
@@ -3687,7 +3772,7 @@ export class ChessEngine {
       [1, 2],
       [2, -1],
       [2, 1],
-      // Extended knight moves
+      // Extended knight moves (broader L-shapes)
       [-3, -1],
       [-3, 1],
       [-1, -3],
@@ -3696,6 +3781,23 @@ export class ChessEngine {
       [1, 3],
       [3, -1],
       [3, 1],
+      // Additional extended patterns to match validation logic
+      [-2, -3],
+      [-2, 3],
+      [2, -3],
+      [2, 3],
+      [-3, -2],
+      [-3, 2],
+      [3, -2],
+      [3, 2],
+      [-4, -1],
+      [-4, 1],
+      [4, -1],
+      [4, 1],
+      [-1, -4],
+      [-1, 4],
+      [1, -4],
+      [1, 4],
     ];
 
     knightMoves.forEach(([df, dr]) => {

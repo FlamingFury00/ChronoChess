@@ -2,11 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no"
-    />
-    <title>ChronoChess: Echoes</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>ChronoChess</title>
     <style>
       :root {
         --bg-primary: #1e2127;
@@ -16,40 +13,39 @@
         --text-secondary: #8c92a0;
         --accent-primary: #61afef;
         --accent-secondary: #98c379;
-        --accent-tertiary: #e06c75;
-        --accent-highlight: #c678dd;
+        --accent-tertiary: #e06c75; 
+        --accent-highlight: #c678dd; 
         --border-color: #4f5660;
-        --font-main: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        --font-mono: "Courier New", Courier, monospace;
+        --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        --font-mono: 'Courier New', Courier, monospace;
         --panel-transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        --mobile-breakpoint: 768px;
       }
 
-      * {
-        /* Basic reset */
+      * { 
         margin: 0;
         padding: 0;
         box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
       }
 
-      html,
-      body {
+      html, body {
         height: 100%;
-        overflow: hidden; /* Prevent body scrollbars, panels will handle their own */
+        overflow: hidden; 
         font-family: var(--font-main);
         background-color: var(--bg-primary);
         color: var(--text-primary);
       }
 
-      #game-wrapper {
-        /* New top-level wrapper */
+      #game-wrapper { 
         display: flex;
         height: 100%;
-        position: relative; /* For absolute positioning of side panels */
+        position: relative; 
       }
 
       .side-panel {
         background-color: var(--bg-secondary);
-        width: 300px; /* Fixed width for side panels */
+        width: 300px; 
         height: 100%;
         padding: 15px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -57,101 +53,113 @@
         flex-direction: column;
         overflow-y: auto;
         z-index: 10;
-        position: absolute; /* For sliding in/out */
+        position: absolute; 
         top: 0;
         transition: var(--panel-transition);
+        font-size: 1.05em; /* Slightly larger text in panels */
       }
 
-      #left-panel {
-        left: 0;
-        transform: translateX(0%);
-      }
-      #left-panel.collapsed {
-        transform: translateX(-100%);
-        opacity: 0;
-        pointer-events: none;
-      }
+      #left-panel { left: 0; transform: translateX(0%); }
+      #left-panel.collapsed { transform: translateX(-100%); opacity: 0; pointer-events: none;}
 
-      #right-panel {
-        right: 0;
-        transform: translateX(0%);
-      }
-      #right-panel.collapsed {
-        transform: translateX(100%);
-        opacity: 0;
-        pointer-events: none;
-      }
+      #right-panel { right: 0; transform: translateX(0%); }
+      #right-panel.collapsed { transform: translateX(100%); opacity: 0; pointer-events: none;}
 
-      #main-content-area {
-        /* Contains 3D view and its controls */
+      #main-content-area { 
         flex-grow: 1;
         display: flex;
         flex-direction: column;
-        padding: 10px; /* Padding around the central content */
-        overflow: hidden; /* Ensure it doesn't cause body scroll */
+        padding: 10px; 
+        overflow: hidden; 
         height: 100%;
+        position: relative; /* Needed for mobile controls overlay */
       }
-
-      #top-bar-controls {
-        /* For encounter buttons, game speed, etc. */
+      
+      #top-bar-controls { 
         background-color: var(--bg-tertiary);
         padding: 10px;
         border-radius: 6px;
         margin-bottom: 10px;
         display: flex;
-        flex-wrap: wrap; /* Allow items to wrap on small screens */
+        flex-wrap: wrap; 
         gap: 10px;
         align-items: center;
       }
-      #top-bar-controls h2 {
-        margin-bottom: 0;
-        border-bottom: none;
-        padding-bottom: 0;
-      }
+      #top-bar-controls h2 { margin-bottom: 0; border-bottom: none; padding-bottom: 0; margin-right: 15px; }
 
       #threejs-container-wrapper {
-        flex-grow: 1; /* Takes up all remaining vertical space */
-        display: flex; /* Needed for child to grow */
+        flex-grow: 1; 
+        display: flex; 
         background-color: var(--bg-tertiary);
         border-radius: 6px;
         padding: 10px;
-        min-height: 0; /* Allows flex child to shrink properly if needed */
+        min-height: 0; 
+        position: relative; /* For overlay controls */
       }
       #threejs-container {
         border: 1px solid var(--accent-primary);
         position: relative;
         width: 100%;
-        height: 100%; /* Fill its wrapper */
+        height: 100%; 
         border-radius: 4px;
         overflow: hidden;
       }
 
+      /* Mobile 3D Controls Overlay */
+       #mobile-3d-controls {
+        position: absolute;
+        bottom: 15px;
+        left: 15px;
+        right: 15px;
+        display: none; /* Hidden by default, shown via media query */
+        justify-content: space-between;
+        z-index: 5;
+        pointer-events: none; /* Container doesn't block */
+      }
+       #mobile-3d-controls .control-cluster {
+           display: flex;
+           gap: 8px;
+           pointer-events: auto; /* Buttons are interactive */
+       }
+       #mobile-3d-controls button {
+           background-color: rgba(40, 44, 52, 0.7); /* Semi-transparent */
+           border: 1px solid var(--accent-primary);
+           color: var(--accent-primary);
+           font-size: 1.5em;
+           width: 45px;
+           height: 45px;
+           padding: 0;
+           margin: 0;
+           line-height: 45px;
+           text-align: center;
+           border-radius: 50%; /* Circular buttons */
+       }
+       #mobile-3d-controls button:hover {
+           background-color: rgba(97, 175, 239, 0.7);
+           color: var(--bg-primary);
+       }
+
+
       .panel-toggle-button {
-        position: fixed; /* Fixed to viewport edges */
+        position: fixed; 
         top: 10px;
         background-color: var(--accent-primary);
         color: var(--bg-primary);
         border: none;
-        padding: 8px 12px;
-        border-radius: 0 5px 5px 0; /* Rounded on one side */
+        padding: 10px 15px; /* Slightly larger */
+        border-radius: 0 5px 5px 0; 
         cursor: pointer;
-        z-index: 20; /* Above side panels when they are open */
-        font-size: 1.2em;
-        transition: background-color 0.2s ease;
+        z-index: 20; 
+        font-size: 1.4em; /* Larger icon */
+        transition: background-color 0.2s ease, transform 0.3s ease-in-out;
       }
-      #toggle-left-panel {
-        left: 0;
-      }
-      #toggle-right-panel {
-        right: 0;
-        border-radius: 5px 0 0 5px;
-      }
-      .panel-toggle-button:hover {
-        background-color: #528bcf;
-      }
+      #toggle-left-panel { left: 0; }
+      #toggle-right-panel { right: 0; border-radius: 5px 0 0 5px; }
+      .panel-toggle-button:hover { background-color: #528bcf; }
+      .panel-toggle-button.hidden-by-other { transform: scale(0.8); opacity: 0.5; pointer-events: none;}
 
-      h2,
-      h3 {
+
+      h2, h3 {
         color: var(--accent-primary);
         margin-top: 0;
         margin-bottom: 15px;
@@ -175,18 +183,17 @@
         margin-top: 8px;
         margin-right: 5px;
         transition: background-color 0.2s ease, transform 0.1s ease;
+        min-height: 40px; /* Ensure minimum tap height */
+        display: inline-flex; /* Align icon/text nicely if needed */
+        align-items: center;
+        justify-content: center;
       }
-      button.small-btn {
-        padding: 6px 10px;
-        font-size: 0.9em;
-      }
+      button.small-btn { padding: 6px 10px; font-size: 0.9em; min-height: 32px; }
       button:hover {
         background-color: #528bcf;
         transform: translateY(-1px);
       }
-      button:active {
-        transform: translateY(0px);
-      }
+      button:active { transform: translateY(0px); }
       button:disabled {
         background-color: var(--border-color);
         color: var(--text-secondary);
@@ -208,13 +215,10 @@
         font-size: 0.9em;
         font-family: var(--font-mono);
         border: 1px solid var(--border-color);
-        max-height: 150px;
+        max-height: 150px; 
         overflow-y: auto;
       }
-      #gameLog {
-        max-height: none;
-        flex-grow: 1;
-      }
+      #gameLog { max-height: none; flex-grow: 1; }
 
       .resource-display {
         margin-bottom: 12px;
@@ -232,18 +236,25 @@
 
       .piece-evolution-section {
         border: 1px solid var(--border-color);
-        padding: 12px;
+        padding: 15px; /* Increased padding */
         margin-bottom: 15px;
         border-radius: 6px;
         background-color: var(--bg-tertiary);
       }
-      .piece-attr {
-        margin-bottom: 8px;
-        font-size: 0.95em;
+      .piece-evolution-section button {
+        margin-top: 10px; /* More space around buttons */
+        padding: 12px 18px; /* Larger buttons */
       }
-      .piece-attr span {
-        color: var(--text-primary);
-      }
+       .piece-evolution-section div:has(> button#pref_q) { /* Target the div holding promo buttons */
+           margin-top: 10px;
+       }
+       .piece-evolution-section div button[id^="pref_"] { /* Promo buttons */
+           min-width: 44px; /* Ensure decent tap target */
+           padding: 10px;
+       }
+
+      .piece-attr { margin-bottom: 10px; font-size: 1em; } /* Slightly larger attr text */
+      .piece-attr span { color: var(--text-primary); }
 
       .selected-preference {
         border: 2px solid var(--accent-secondary);
@@ -257,2677 +268,361 @@
         margin-bottom: 10px;
         min-height: 50px;
       }
-      #narrative-display p {
-        margin: 5px 0;
-      }
+      #narrative-display p { margin: 5px 0; }
 
       #game-status {
         font-weight: bold;
-        margin-top: 10px;
         padding: 8px;
         background-color: var(--bg-primary);
         border-radius: 4px;
         text-align: center;
       }
+      
+      #game-speed-controls { margin: 0 10px; } 
+      #game-speed-controls span { margin-right: 5px; }
 
-      #game-speed-controls {
-        margin: 0 10px;
-      } /* Removed top/bottom margin, handled by flex gap */
-      #game-speed-controls span {
-        margin-right: 5px;
-      }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: var(--bg-tertiary); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: var(--bg-tertiary);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: var(--border-color);
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: var(--text-secondary);
-      }
-
-      /* Mobile specific considerations (very basic for now) */
-      @media (max-width: 768px) {
+      /* Mobile specific considerations */
+      @media (max-width: var(--mobile-breakpoint)) {
         .side-panel {
-          width: 80%; /* Wider when open on mobile */
-          max-width: 280px;
+          width: 85%; 
+          max-width: 300px;
+          font-size: 1em; /* Reset font size for potentially smaller screen */
         }
-        #left-panel.collapsed,
-        #right-panel.collapsed {
-          opacity: 0;
-          pointer-events: none;
+        #left-panel.collapsed, #right-panel.collapsed {
+            opacity: 0;
+            pointer-events: none;
         }
-        #toggle-left-panel.hidden-by-other,
-        #toggle-right-panel.hidden-by-other {
-          display: none; /* Hide toggle if other panel is open */
+        #main-content-area {
+            padding: 5px; /* Reduce padding on mobile */
         }
         #top-bar-controls {
-          flex-direction: column; /* Stack controls vertically */
-          align-items: stretch; /* Make buttons full width */
+            padding: 8px;
+            gap: 5px;
         }
-        #top-bar-controls > * {
-          margin-bottom: 5px;
-        }
+        #top-bar-controls h2 { font-size: 1.2em; margin-right: 5px;}
+        #board-info { display: none; } /* Hide FEN/ASCII on mobile */
+        #game-status { font-size: 0.9em; }
+
+        #mobile-3d-controls { display: flex; } /* Show mobile controls */
       }
+
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   </head>
   <body>
     <div id="game-wrapper">
-      <button
-        class="panel-toggle-button"
-        id="toggle-left-panel"
-        onclick="game.togglePanel('left')"
-      >
-        ☰
-      </button>
-
+      <button class="panel-toggle-button" id="toggle-left-panel" onclick="game.togglePanel('left')">☰</button>
+      
       <div class="side-panel" id="left-panel">
         <h2>The Workshop</h2>
-        <div class="resource-display" id="temporalEssenceDisplay">
-          Temporal Essence (TE): <span id="temporalEssence">0</span>
-        </div>
-        <div class="resource-display" id="mnemonicDustDisplay">
-          Mnemonic Dust (MD): <span id="mnemonicDust">0</span>
-        </div>
-        <div class="resource-display" id="aetherShardsDisplay">
-          Aether Shards (AS): <span id="aetherShards">0</span>
-        </div>
-        <div class="resource-display" id="arcaneManaDisplay">
-          Arcane Mana (AM): <span id="arcaneMana">0</span>
-        </div>
-        <hr style="border-color: var(--border-color); margin: 15px 0" />
+        <div class="resource-display" id="temporalEssenceDisplay">Temporal Essence (TE): <span id="temporalEssence">0</span></div>
+        <div class="resource-display" id="mnemonicDustDisplay">Mnemonic Dust (MD): <span id="mnemonicDust">0</span></div>
+        <div class="resource-display" id="aetherShardsDisplay">Aether Shards (AS): <span id="aetherShards">0</span></div>
+        <div class="resource-display" id="arcaneManaDisplay">Arcane Mana (AM): <span id="arcaneMana">0</span></div>
+        <hr style="border-color: var(--border-color); margin: 15px 0;" />
         <h3>Evolve Pieces</h3>
+        <!-- Sections structure remains, CSS handles touch targets -->
         <div class="piece-evolution-section">
           <h4>Pawn</h4>
-          <div class="piece-attr">
-            March Speed: <span id="pawnMarchSpeed">1</span> (<span
-              id="pawnMarchSpeedCost"
-              >0</span
-            >
-            TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('pawn', 'marchSpeed')"
-            data-base-title="Increases base Temporal Essence generation."
-          >
-            Upgrade Speed
-          </button>
-          <div class="piece-attr">
-            Resilience: <span id="pawnResilience">0</span> (<span
-              id="pawnResilienceCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('pawn', 'resilience')"
-            data-base-title="Pawns may survive one non-fatal hit. (Effect TBD)"
-          >
-            Upgrade Resilience
-          </button>
-          <div class="piece-attr">
-            Promo Pref: <span id="pawnPromotionPreference">Q</span> (<span
-              id="pawnPromotionPreferenceCost"
-              >0</span
-            >
-            MD)
-          </div>
+          <div class="piece-attr">March Speed: <span id="pawnMarchSpeed">1</span> (<span id="pawnMarchSpeedCost">0</span> TE)</div>
+          <button onclick="game.evolvePiece('pawn', 'marchSpeed')" data-base-title="Increases base Temporal Essence generation.">Upgrade Speed</button>
+          <div class="piece-attr">Resilience: <span id="pawnResilience">0</span> (<span id="pawnResilienceCost">0</span> MD)</div>
+          <button onclick="game.evolvePiece('pawn', 'resilience')" data-base-title="Pawns may survive one non-fatal hit. (Effect TBD)">Upgrade Resilience</button>
+          <div class="piece-attr">Promo Pref: <span id="pawnPromotionPreference">Q</span> (<span id="pawnPromotionPreferenceCost">0</span> MD)</div>
           <div>
-            <button
-              id="pref_q"
-              onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'q')"
-              data-base-title="Promote to Queen"
-            >
-              Q
-            </button>
-            <button
-              id="pref_n"
-              onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'n')"
-              data-base-title="Promote to Knight"
-            >
-              N
-            </button>
-            <button
-              id="pref_r"
-              onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'r')"
-              data-base-title="Promote to Rook"
-            >
-              R
-            </button>
-            <button
-              id="pref_b"
-              onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'b')"
-              data-base-title="Promote to Bishop"
-            >
-              B
-            </button>
+            <button id="pref_q" onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'q')" data-base-title="Promote to Queen">Q</button>
+            <button id="pref_n" onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'n')" data-base-title="Promote to Knight">N</button>
+            <button id="pref_r" onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'r')" data-base-title="Promote to Rook">R</button>
+            <button id="pref_b" onclick="game.evolvePiece('pawn', 'setPromotionPreference', 'b')" data-base-title="Promote to Bishop">B</button>
           </div>
+        
         </div>
         <div class="piece-evolution-section">
-          <h4>Knight</h4>
-          <div class="piece-attr">
-            Dash Chance: <span id="knightDashChance">0.1</span> (<span
-              id="knightDashChanceCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('knight', 'dashChance')"
-            data-base-title="Increases chance for Knight to make an extra move."
-          >
-            Upgrade Dash Chance
-          </button>
-          <div class="piece-attr">
-            Dash Cooldown: <span id="knightDashCooldown">5</span>t (<span
-              id="knightDashCooldownCost"
-              >0</span
-            >
-            TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('knight', 'dashCooldown')"
-            data-base-title="Reduces turns Knight must wait between Dashes."
-          >
-            Reduce Dash CD
-          </button>
+            <h4>Knight</h4>
+            <div class="piece-attr">Dash Chance: <span id="knightDashChance">0.1</span> (<span id="knightDashChanceCost">0</span> MD)</div>
+            <button onclick="game.evolvePiece('knight', 'dashChance')" data-base-title="Increases chance for Knight to make an extra move.">Upgrade Dash Chance</button>
+            <div class="piece-attr">Dash Cooldown: <span id="knightDashCooldown">5</span>t (<span id="knightDashCooldownCost">0</span> TE)</div>
+            <button onclick="game.evolvePiece('knight', 'dashCooldown')" data-base-title="Reduces turns Knight must wait between Dashes.">Reduce Dash CD</button>
         </div>
         <div class="piece-evolution-section">
-          <h4>Bishop</h4>
-          <div class="piece-attr">
-            Snipe Range: <span id="bishopSnipeRange">1</span> (<span
-              id="bishopSnipeRangeCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('bishop', 'snipeRange')"
-            data-base-title="Allows Bishop to attack from further. (Effect TBD)"
-          >
-            Inc. Snipe Range
-          </button>
-          <div class="piece-attr">
-            Consecration Turns: <span id="bishopConsecrationTurns">3</span>t
-            (<span id="bishopConsecrationTurnsCost">0</span> TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('bishop', 'consecrationTurns')"
-            data-base-title="Reduces turns Bishop must be stationary to consecrate."
-          >
-            Reduce Consec. Turns
-          </button>
+            <h4>Bishop</h4>
+            <div class="piece-attr">Snipe Range: <span id="bishopSnipeRange">1</span> (<span id="bishopSnipeRangeCost">0</span> MD)</div>
+            <button onclick="game.evolvePiece('bishop', 'snipeRange')" data-base-title="Allows Bishop to attack from further. (Effect TBD)">Inc. Snipe Range</button>
+            <div class="piece-attr">Consecration Turns: <span id="bishopConsecrationTurns">3</span>t (<span id="bishopConsecrationTurnsCost">0</span> TE)</div>
+            <button onclick="game.evolvePiece('bishop', 'consecrationTurns')" data-base-title="Reduces turns Bishop must be stationary to consecrate.">Reduce Consec. Turns</button>
         </div>
         <div class="piece-evolution-section">
-          <h4>Rook</h4>
-          <div class="piece-attr">
-            Entrench Thresh: <span id="rookEntrenchThreshold">3</span>t (<span
-              id="rookEntrenchThresholdCost"
-              >0</span
-            >
-            TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('rook', 'entrenchThreshold')"
-            data-base-title="Reduces turns Rook must be stationary to entrench."
-          >
-            Reduce Entrench Thresh.
-          </button>
-          <div class="piece-attr">
-            Entrench Power: <span id="rookEntrenchPower">1</span> (<span
-              id="rookEntrenchPowerCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('rook', 'entrenchPower')"
-            data-base-title="Increases defensive bonus when entrenched."
-          >
-            Inc. Entrench Power
-          </button>
+            <h4>Rook</h4>
+            <div class="piece-attr">Entrench Thresh: <span id="rookEntrenchThreshold">3</span>t (<span id="rookEntrenchThresholdCost">0</span> TE)</div>
+            <button onclick="game.evolvePiece('rook', 'entrenchThreshold')" data-base-title="Reduces turns Rook must be stationary to entrench.">Reduce Entrench Thresh.</button>
+            <div class="piece-attr">Entrench Power: <span id="rookEntrenchPower">1</span> (<span id="rookEntrenchPowerCost">0</span> MD)</div>
+            <button onclick="game.evolvePiece('rook', 'entrenchPower')" data-base-title="Increases defensive bonus when entrenched.">Inc. Entrench Power</button>
         </div>
         <div class="piece-evolution-section">
-          <h4>Queen</h4>
-          <div class="piece-attr">
-            Dom Aura Range: <span id="queenDominanceAuraRange">1</span> (<span
-              id="queenDominanceAuraRangeCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('queen', 'dominanceAuraRange')"
-            data-base-title="Increases range of Queen's Dominance Aura."
-          >
-            Inc. Aura Range
-          </button>
-          <div class="piece-attr">
-            Mana Regen Bonus: <span id="queenManaRegenBonus">0.1</span> AM/s
-            (<span id="queenManaRegenBonusCost">0</span> TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('queen', 'manaRegenBonus')"
-            data-base-title="Increases base Arcane Mana generation."
-          >
-            Inc. Mana Bonus
-          </button>
+            <h4>Queen</h4>
+            <div class="piece-attr">Dom Aura Range: <span id="queenDominanceAuraRange">1</span> (<span id="queenDominanceAuraRangeCost">0</span> MD)</div>
+            <button onclick="game.evolvePiece('queen', 'dominanceAuraRange')" data-base-title="Increases range of Queen's Dominance Aura.">Inc. Aura Range</button>
+            <div class="piece-attr">Mana Regen Bonus: <span id="queenManaRegenBonus">0.1</span> AM/s (<span id="queenManaRegenBonusCost">0</span> TE)</div>
+            <button onclick="game.evolvePiece('queen', 'manaRegenBonus')" data-base-title="Increases base Arcane Mana generation.">Inc. Mana Bonus</button>
         </div>
         <div class="piece-evolution-section">
-          <h4>King</h4>
-          <div class="piece-attr">
-            Royal Decree Uses: <span id="kingRoyalDecreeUses">1</span> (<span
-              id="kingRoyalDecreeUsesCost"
-              >0</span
-            >
-            MD)
-          </div>
-          <button
-            onclick="game.evolvePiece('king', 'royalDecreeUses')"
-            data-base-title="Allows King to buff a friendly piece. (Effect TBD)"
-          >
-            Inc. Decree Uses
-          </button>
-          <div class="piece-attr">
-            Last Stand Thresh:
-            <span id="kingLastStandThreshold">0.2</span> (<span
-              id="kingLastStandThresholdCost"
-              >0</span
-            >
-            TE)
-          </div>
-          <button
-            onclick="game.evolvePiece('king', 'lastStandThreshold')"
-            data-base-title="King gains power when army is small. (Effect TBD)"
-          >
-            Inc. Last Stand Thresh.
-          </button>
+            <h4>King</h4>
+            <div class="piece-attr">Royal Decree Uses: <span id="kingRoyalDecreeUses">1</span> (<span id="kingRoyalDecreeUsesCost">0</span> MD)</div>
+            <button onclick="game.evolvePiece('king', 'royalDecreeUses')" data-base-title="Allows King to buff a friendly piece. (Effect TBD)">Inc. Decree Uses</button>
+            <div class="piece-attr">Last Stand Thresh: <span id="kingLastStandThreshold">0.2</span> (<span id="kingLastStandThresholdCost">0</span> TE)</div>
+            <button onclick="game.evolvePiece('king', 'lastStandThreshold')" data-base-title="King gains power when army is small. (Effect TBD)">Inc. Last Stand Thresh.</button>
         </div>
-        <hr style="border-color: var(--border-color); margin: 15px 0" />
+        <hr style="border-color: var(--border-color); margin: 15px 0;" />
         <button onclick="game.saveGame()">Save Game</button>
         <button onclick="game.loadGame()">Load Game</button>
-        <button
-          onclick="game.resetGame()"
-          style="background-color: var(--accent-tertiary)"
-        >
-          Reset Game
-        </button>
+        <button onclick="game.resetGame()" style="background-color: var(--accent-tertiary);">Reset Game</button>
       </div>
 
       <div id="main-content-area">
         <div id="top-bar-controls">
-          <h2>Encounter</h2>
-          <button id="startEncounterBtn" onclick="game.startEncounter()">
-            Start New Encounter
-          </button>
-          <button
-            id="endEncounterBtn"
-            onclick="game.endEncounter(false,true)"
-            style="display: none; background-color: var(--accent-tertiary)"
-          >
-            Forfeit
-          </button>
-          <div id="game-speed-controls">
-            <span>Speed:</span>
-            <button
-              id="speedBtn1x"
-              class="small-btn selected-speed"
-              onclick="game.setGameSpeed(1)"
-            >
-              1x
-            </button>
-            <button
-              id="speedBtn2x"
-              class="small-btn"
-              onclick="game.setGameSpeed(2)"
-            >
-              2x
-            </button>
-          </div>
-          <div class="piece-attr" style="margin-left: auto">
-            AI Eval: <span id="aiEvaluationScore">0</span>
-          </div>
-          <!-- FEN/ASCII and Game Status can be smaller or in a toggleable section too if needed -->
+            <h2>Encounter</h2>
+            <button id="startEncounterBtn" onclick="game.startEncounter()">Start</button>
+            <button id="endEncounterBtn" onclick="game.endEncounter(false,true)" style="display: none; background-color: var(--accent-tertiary);">Forfeit</button>
+            <div id="game-speed-controls">
+                <span>Speed:</span>
+                <button id="speedBtn1x" class="small-btn selected-speed" onclick="game.setGameSpeed(1)">1x</button>
+                <button id="speedBtn2x" class="small-btn" onclick="game.setGameSpeed(2)">2x</button>
+            </div>
+            <div class="piece-attr" style="margin-left: auto;">AI Eval: <span id="aiEvaluationScore">0</span></div>
         </div>
-        <div
-          id="board-info"
-          style="display: flex; gap: 10px; margin-bottom: 10px"
-        >
-          <pre id="board-fen" style="flex: 1; max-height: 70px">
-Initializing...</pre
-          >
-          <!-- Reduced max-height -->
-          <pre id="board-ascii" style="flex: 1; max-height: 120px">
-Initializing...</pre
-          >
-          <!-- Reduced max-height -->
+        <div id="board-info" style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <pre id="board-fen" style="flex:1; max-height: 70px;">Initializing...</pre> 
+            <pre id="board-ascii" style="flex:1; max-height: 120px;">Initializing...</pre> 
         </div>
-        <div id="game-status" style="margin-bottom: 10px">
-          Game not started.
-        </div>
+        <div id="game-status" style="margin-bottom:10px;">Game not started.</div>
 
         <div id="threejs-container-wrapper">
-          <!-- <h3>3D Visualization</h3> No H3 needed here, it's the main focus -->
           <div id="threejs-container"></div>
+          <!-- Mobile Controls Overlay -->
+           <div id="mobile-3d-controls">
+               <div class="control-cluster">
+                   <button onclick="game.mobileCameraControl('rotateLeft')">↶</button> <!-- Rotate Left -->
+                   <button onclick="game.mobileCameraControl('rotateRight')">↷</button> <!-- Rotate Right -->
+               </div>
+               <div class="control-cluster">
+                   <button onclick="game.mobileCameraControl('zoomIn')">+</button>
+                   <button onclick="game.mobileCameraControl('zoomOut')">-</button>
+               </div>
+           </div>
         </div>
       </div>
-
+      
       <div class="side-panel" id="right-panel">
         <h2>Game Log</h2>
         <pre id="gameLog"></pre>
-        <hr style="border-color: var(--border-color); margin: 15px 0" />
+        <hr style="border-color: var(--border-color); margin: 15px 0;" />
         <h3>Boosters (Placeholder)</h3>
-        <button
-          onclick="game.buyAestheticBooster('sparkleTrail')"
-          data-base-title="Unlock a cosmetic sparkle trail for your pieces! (5 AS)"
-        >
-          Sparkle Trail
-        </button>
-        <div id="narrative-display" style="margin-top: 20px">
-          <p><em>No active encounter. Start one to begin the battle!</em></p>
+        <button onclick="game.buyAestheticBooster('sparkleTrail')" data-base-title="Unlock a cosmetic sparkle trail for your pieces! (5 AS)">Sparkle Trail</button>
+         <div id="narrative-display" style="margin-top: 20px;">
+            <p><em>No active encounter. Start one to begin the battle!</em></p>
         </div>
-        <div class="piece-attr" style="margin-top: 10px">
-          Knight Dash CD: <span id="knightDashCooldownRemainingDisplay">0</span>
-        </div>
+         <div class="piece-attr" style="margin-top: 10px;">Knight Dash CD: <span id="knightDashCooldownRemainingDisplay">0</span></div>
       </div>
-      <button
-        class="panel-toggle-button"
-        id="toggle-right-panel"
-        onclick="game.togglePanel('right')"
-      >
-        ☰
-      </button>
+      <button class="panel-toggle-button" id="toggle-right-panel" onclick="game.togglePanel('right')">☰</button>
     </div>
 
     <script>
       const game = {
-        resources: {
-          temporalEssence: 0,
-          mnemonicDust: 0,
-          aetherShards: 0,
-          arcaneMana: 0,
-        },
+        resources: { temporalEssence: 0, mnemonicDust: 0, aetherShards: 0, arcaneMana: 0, },
         pieces: {},
         isEncounterActive: false,
-        currentEncounter: null,
+  currentEncounter: { name: "Temporal Nexus", description: "Temporal disturbances intensify! Control the flow of time!", opponentAI: "minimax", },
         chessInstance: null,
         autobattleInterval: null,
-        autobattleBaseIntervalTime: 2000,
+        autobattleBaseIntervalTime: 2000, 
         gameSpeedMultiplier: 1,
         knightGlobalDashCooldownTurnsRemaining: 0,
         encounterPieceStates: {},
-        aiSearchDepth: 2,
-        baseAiSearchDepth: 2, // New base depth
+        aiSearchDepth: 2, 
+        baseAiSearchDepth: 2, 
 
-        threeScene: null,
-        threeCamera: null,
-        threeRenderer: null,
-        threeBoardGroup: null,
-        threeSkybox: null,
-        threePieces: {},
-
-        animationJobs: [],
-        ANIMATION_DURATION_MS: 600,
-        vfxObjects: [],
-        vfxObjectPool: {
-          dash_trail: [],
-          dominated_effect: [],
-          consecration_receiver: [],
-        },
+        threeScene: null, threeCamera: null, threeRenderer: null, threeBoardGroup: null, threeSkybox: null,
+        threePieces: {}, 
+        
+        animationJobs: [], 
+        ANIMATION_DURATION_MS: 600, 
+        vfxObjects: [], 
+        vfxObjectPool: { dash_trail: [], dominated_effect: [], consecration_receiver: [] },
 
         audioContext: null,
         masterGain: null,
 
-        // Materials (largely same, dominance aura ring more visible)
+        autoSaveInterval: null,
+        autoSaveFrequency: 60000, // 60 seconds
+        saveCounter: 0, // To reduce logging frequency
+
+        // Materials (largely same as Iteration 12)
         pieceMaterials: {
-          w: new THREE.MeshStandardMaterial({
-            color: 0xeeeeee,
-            metalness: 0.3,
-            roughness: 0.5,
-          }),
-          b: new THREE.MeshStandardMaterial({
-            color: 0x333333,
-            metalness: 0.3,
-            roughness: 0.5,
-          }),
-          entrenched_w: new THREE.MeshStandardMaterial({
-            color: 0xfffacd,
-            metalness: 0.4,
-            roughness: 0.4,
-            emissive: 0xaaaa00,
-            emissiveIntensity: 0.3,
-          }),
-          entrenched_b: new THREE.MeshStandardMaterial({
-            color: 0x505070,
-            metalness: 0.4,
-            roughness: 0.4,
-            emissive: 0x202050,
-            emissiveIntensity: 0.3,
-          }),
-          consecrated_source_w: new THREE.MeshStandardMaterial({
-            color: 0xffffe0,
-            emissive: 0xddcc33,
-            emissiveIntensity: 0.7,
-          }),
-          consecrated_source_b: new THREE.MeshStandardMaterial({
-            color: 0xadd8e6,
-            emissive: 0x0055cc,
-            emissiveIntensity: 0.7,
-          }),
-          dominated_w: new THREE.MeshStandardMaterial({
-            color: 0xa0a0a0,
-            metalness: 0.1,
-            roughness: 0.9,
-            emissive: 0x401040,
-            emissiveIntensity: 0.2,
-          }),
-          dominated_b: new THREE.MeshStandardMaterial({
-            color: 0x353535,
-            metalness: 0.1,
-            roughness: 0.9,
-            emissive: 0x401040,
-            emissiveIntensity: 0.2,
-          }),
-          shield: new THREE.MeshStandardMaterial({
-            color: 0x61afef,
-            transparent: true,
-            opacity: 0.4,
-            emissive: 0x307fef,
-            emissiveIntensity: 0.3,
-          }),
+          w: new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.3, roughness: 0.5 }),
+          b: new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.3, roughness: 0.5 }),
+          entrenched_w: new THREE.MeshStandardMaterial({ color: 0xfffacd, metalness: 0.4, roughness: 0.4, emissive: 0xaaaa00, emissiveIntensity: 0.3 }),
+          entrenched_b: new THREE.MeshStandardMaterial({ color: 0x505070, metalness: 0.4, roughness: 0.4, emissive: 0x202050, emissiveIntensity: 0.3 }),
+          consecrated_source_w: new THREE.MeshStandardMaterial({ color: 0xffffe0, emissive: 0xddcc33, emissiveIntensity: 0.7 }),
+          consecrated_source_b: new THREE.MeshStandardMaterial({ color: 0xadd8e6, emissive: 0x0055cc, emissiveIntensity: 0.7 }),
+          dominated_w: new THREE.MeshStandardMaterial({ color: 0xa0a0a0, metalness: 0.1, roughness: 0.9, emissive: 0x401040, emissiveIntensity: 0.2 }), 
+          dominated_b: new THREE.MeshStandardMaterial({ color: 0x353535, metalness: 0.1, roughness: 0.9, emissive: 0x401040, emissiveIntensity: 0.2 }), 
+          shield: new THREE.MeshStandardMaterial({ color: 0x61afef, transparent: true, opacity: 0.4, emissive: 0x307fef, emissiveIntensity: 0.3 }),
         },
-        consecrationReceiverMaterial: new THREE.PointsMaterial({
-          color: 0xfff5c0,
-          size: 0.18,
-          transparent: true,
-          opacity: 0.9,
-          blending: THREE.AdditiveBlending,
-          sizeAttenuation: true,
-        }),
-        consecrationSourceGroundMaterial: new THREE.MeshBasicMaterial({
-          color: 0xffe082,
-          transparent: true,
-          opacity: 0.3,
-          blending: THREE.AdditiveBlending,
-        }),
-        dominanceAuraRangeMaterial: new THREE.MeshBasicMaterial({
-          color: 0xaa44ff,
-          transparent: true,
-          opacity: 0.25,
-          side: THREE.DoubleSide,
-        }), // More opaque
-        dominanceEffectMaterial: new THREE.PointsMaterial({
-          color: 0x880088,
-          size: 0.1,
-          transparent: true,
-          opacity: 0.6,
-          blending: THREE.AdditiveBlending,
-          sizeAttenuation: true,
-        }),
-        abilityFlashMaterial: new THREE.MeshStandardMaterial({
-          color: 0x00ced1,
-          emissive: 0x00ffff,
-          emissiveIntensity: 0.7,
-        }),
-        knightDashParticleMaterial: new THREE.MeshBasicMaterial({
-          color: 0xffeb3b,
-          transparent: true,
-          opacity: 0.8,
-        }),
+        consecrationReceiverMaterial: new THREE.PointsMaterial({ color: 0xfff5c0, size: 0.18, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, sizeAttenuation: true }), 
+        consecrationSourceGroundMaterial: new THREE.MeshBasicMaterial({ color: 0xffe082, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending }),
+        dominanceAuraRangeMaterial: new THREE.MeshBasicMaterial({ color: 0xaa44ff, transparent: true, opacity: 0.25, side: THREE.DoubleSide }),
+        dominanceEffectMaterial: new THREE.PointsMaterial({ color: 0x880088, size: 0.1, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, sizeAttenuation: true }), 
+        abilityFlashMaterial: new THREE.MeshStandardMaterial({ color: 0x00ced1, emissive: 0x00ffff, emissiveIntensity: 0.7, }),
+        knightDashParticleMaterial: new THREE.MeshBasicMaterial({ color: 0xffeb3b, transparent: true, opacity: 0.8 }),
 
         squareSize: 1,
         basePieceScale: 0.38,
 
-        getDefaultPieces() {
-          /* ... (same as Iteration 11) ... */ return {
-            pawn: {
-              marchSpeed: 1,
-              resilience: 0,
-              promotionPreference: "q",
-              evolutionCosts: {
-                marchSpeed: (l) => 10 * Math.pow(1.5, l - 1),
-                resilience: (l) => 5 * Math.pow(2, l),
-                setPromotionPreference: () => 20,
-              },
-            },
-            knight: {
-              dashChance: 0.1,
-              dashCooldown: 5,
-              evolutionCosts: {
-                dashChance: (c) =>
-                  15 * Math.pow(1.8, Math.floor((c / 0.05) * 20)),
-                dashCooldown: (c) => 10 * Math.pow(1.6, 5 - c),
-              },
-            },
-            bishop: {
-              snipeRange: 1,
-              consecrationTurns: 3,
-              evolutionCosts: {
-                snipeRange: (l) => 12 * Math.pow(1.6, l),
-                consecrationTurns: (t) => 15 * Math.pow(1.7, 3 - t),
-              },
-            },
-            rook: {
-              entrenchThreshold: 3,
-              entrenchPower: 1,
-              evolutionCosts: {
-                entrenchThreshold: (t) => 12 * Math.pow(1.7, 3 - t),
-                entrenchPower: (p) => 18 * Math.pow(1.9, p),
-              },
-            },
-            queen: {
-              dominanceAuraRange: 1,
-              manaRegenBonus: 0.1,
-              evolutionCosts: {
-                dominanceAuraRange: (r) => 25 * Math.pow(2, r),
-                manaRegenBonus: (b) =>
-                  20 * Math.pow(1.8, Math.floor((b / 0.1) * 10)),
-              },
-            },
-            king: {
-              royalDecreeUses: 1,
-              lastStandThreshold: 0.2,
-              evolutionCosts: {
-                royalDecreeUses: (u) => 50 * Math.pow(2.5, u),
-                lastStandThreshold: (t) =>
-                  30 * Math.pow(1.5, Math.floor((t / 0.05) * 20)),
-              },
-            },
-          };
-        },
-        restoreEvolutionCostFunctions(pD, defPD) {
-          /* ... (same as Iteration 11) ... */ if (
-            pD &&
-            pD.evolutionCosts &&
-            defPD &&
-            defPD.evolutionCosts
-          ) {
-            for (const cK in defPD.evolutionCosts) {
-              if (
-                defPD.evolutionCosts.hasOwnProperty(cK) &&
-                typeof defPD.evolutionCosts[cK] === "function"
-              ) {
-                if (typeof pD.evolutionCosts[cK] !== "function")
-                  pD.evolutionCosts[cK] = defPD.evolutionCosts[cK];
-              }
-            }
-          }
-        },
+        getDefaultPieces() { /* ... (same as Iteration 12) ... */ return { pawn: { marchSpeed: 1, resilience: 0, promotionPreference: "q", evolutionCosts: { marchSpeed: (l) => 10 * Math.pow(1.5, l - 1), resilience: (l) => 5 * Math.pow(2, l), setPromotionPreference: () => 20, }, }, knight: { dashChance: 0.1, dashCooldown: 5, evolutionCosts: { dashChance: (c) => 15 * Math.pow(1.8, Math.floor((c / 0.05) * 20)), dashCooldown: (c) => 10 * Math.pow(1.6, 5 - c), }, }, bishop: { snipeRange: 1, consecrationTurns: 3, evolutionCosts: { snipeRange: (l) => 12 * Math.pow(1.6, l), consecrationTurns: (t) => 15 * Math.pow(1.7, 3 - t), }, }, rook: { entrenchThreshold: 3, entrenchPower: 1, evolutionCosts: { entrenchThreshold: (t) => 12 * Math.pow(1.7, 3 - t), entrenchPower: (p) => 18 * Math.pow(1.9, p), }, }, queen: { dominanceAuraRange: 1, manaRegenBonus: 0.1, evolutionCosts: { dominanceAuraRange: (r) => 25 * Math.pow(2, r), manaRegenBonus: (b) => 20 * Math.pow(1.8, Math.floor((b / 0.1) * 10)), }, }, king: { royalDecreeUses: 1, lastStandThreshold: 0.2, evolutionCosts: { royalDecreeUses: (u) => 50 * Math.pow(2.5, u), lastStandThreshold: (t) => 30 * Math.pow(1.5, Math.floor((t / 0.05) * 20)), }, }, }; },
+        restoreEvolutionCostFunctions(pD, defPD) { /* ... (same as Iteration 12) ... */ if (pD && pD.evolutionCosts && defPD && defPD.evolutionCosts) { for (const cK in defPD.evolutionCosts) { if (defPD.evolutionCosts.hasOwnProperty(cK) && typeof defPD.evolutionCosts[cK] === "function") { if (typeof pD.evolutionCosts[cK] !== "function") pD.evolutionCosts[cK] = defPD.evolutionCosts[cK]; } } } },
 
         init() {
-          this.log("Initializing ChronoChess: Echoes (Iteration 12)...");
+            this.log("Initializing ChronoChess...");
           this.initAudio();
           this.pieces = this.getDefaultPieces();
-          this.loadGame();
-          this.updateUI();
+          this.loadGame(); 
+          this.updateUI(); 
           this.setupIdleGeneration();
           this.setupThreeJS();
+          this.setupAutoSave(); // Setup auto-save timers and events
           this.updateGameSpeedButtons();
-          this.log("Mainframe online. Dimensional interface active.");
-          // Ensure panels are in their default state on init based on screen size
+          this.log("Chronostream stable. Auto-save engaged.");
           if (window.innerWidth <= 768) {
-            this.togglePanel("left", true); // Collapse left by default on mobile
-            this.togglePanel("right", true); // Collapse right by default on mobile
+            this.togglePanel('left', true); 
+            this.togglePanel('right', true); 
           }
+          window.addEventListener('resize', this.handleResize); // Add resize listener for panel toggling
         },
 
-        initAudio() {
-          /* ... (same as Iteration 11) ... */ try {
-            this.audioContext = new (window.AudioContext ||
-              window.webkitAudioContext)();
-            this.masterGain = this.audioContext.createGain();
-            this.masterGain.gain.setValueAtTime(
-              0.3,
-              this.audioContext.currentTime
-            );
-            this.masterGain.connect(this.audioContext.destination);
-            this.log("Audio system online.");
-          } catch (e) {
-            this.log("Audio init error: " + e.message);
-            this.audioContext = null;
-          }
-        },
-        playSound(
-          type = "click",
-          volume = 1,
-          duration = 0.1,
-          freq1 = 440,
-          freq2 = 880
-        ) {
-          /* ... (same as Iteration 11) ... */ if (
-            !this.audioContext ||
-            !this.masterGain
-          )
-            return;
-          const osc = this.audioContext.createOscillator();
-          const gain = this.audioContext.createGain();
-          osc.connect(gain);
-          gain.connect(this.masterGain);
-          let wave = "sine";
-          switch (type) {
-            case "click":
-              wave = "triangle";
-              duration = 0.05;
-              freq1 = 900;
-              freq2 = 1300;
-              volume = 0.25;
-              break;
-            case "move":
-              wave = "sine";
-              duration = 0.1;
-              freq1 = 330;
-              freq2 = 440;
-              volume = 0.35;
-              break;
-            case "capture":
-              wave = "noise";
-              duration = 0.2;
-              volume = 0.4;
-              gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
-              gain.gain.exponentialRampToValueAtTime(
-                0.001,
-                this.audioContext.currentTime + duration
-              );
-              osc.type = wave;
-              osc.start();
-              osc.stop(this.audioContext.currentTime + duration);
-              return;
-            case "knight_dash":
-              wave = "sawtooth";
-              duration = 0.15;
-              freq1 = 800;
-              freq2 = 1500;
-              volume = 0.45;
-              break;
-            case "rook_entrench":
-              wave = "square";
-              duration = 0.3;
-              freq1 = 100;
-              freq2 = 150;
-              volume = 0.5;
-              break;
-            case "bishop_consecrate":
-              wave = "triangle";
-              duration = 0.4;
-              freq1 = 500;
-              freq2 = 800;
-              volume = 0.3;
-              break;
-            case "queen_dominate":
-              wave = "sawtooth";
-              duration = 0.35;
-              freq1 = 250;
-              freq2 = 180;
-              volume = 0.4;
-              break;
-            case "error":
-              wave = "square";
-              duration = 0.2;
-              freq1 = 200;
-              freq2 = 120;
-              volume = 0.3;
-              break;
-            case "evolve":
-              wave = "sine";
-              duration = 0.3;
-              freq1 = 600;
-              freq2 = 1200;
-              volume = 0.4;
-              break;
-            case "resource_gain":
-              wave = "triangle";
-              duration = 0.08;
-              freq1 = 1200;
-              freq2 = 1800;
-              volume = 0.15;
-              break;
-            case "encounter_start":
-              wave = "sawtooth";
-              duration = 0.5;
-              freq1 = 150;
-              freq2 = 400;
-              volume = 0.5;
-              break;
-            case "encounter_win":
-              wave = "sine";
-              duration = 0.6;
-              freq1 = 523;
-              freq2 = 783;
-              volume = 0.5;
-              break;
-            case "encounter_lose":
-              wave = "square";
-              duration = 0.6;
-              freq1 = 300;
-              freq2 = 100;
-              volume = 0.5;
-              break;
-          }
-          osc.type = wave;
-          osc.frequency.setValueAtTime(freq1, this.audioContext.currentTime);
-          osc.frequency.linearRampToValueAtTime(
-            freq2,
-            this.audioContext.currentTime + duration * 0.8
-          );
-          gain.gain.setValueAtTime(volume, this.audioContext.currentTime);
-          gain.gain.exponentialRampToValueAtTime(
-            0.001,
-            this.audioContext.currentTime + duration
-          );
-          osc.start(this.audioContext.currentTime);
-          osc.stop(this.audioContext.currentTime + duration);
-        },
-        log(message) {
-          /* ... (same as Iteration 11) ... */ const lE =
-            document.getElementById("gameLog");
-          const ts = `[${new Date().toLocaleTimeString()}]`;
-          lE.textContent = `${ts} ${message}\n` + lE.textContent;
-          if (lE.textContent.length > 10000)
-            lE.textContent =
-              lE.textContent.substring(0, 10000) + "\n... (log truncated)";
-        },
-        setupIdleGeneration() {
-          /* ... (same as Iteration 11 - no sound on tick) ... */ setInterval(
-            () => {
-              let teBonus = 0,
-                manaBonus = 0.05;
-              if (this.pieces.pawn)
-                teBonus += this.pieces.pawn.marchSpeed * 0.1;
-              if (this.pieces.queen)
-                manaBonus += this.pieces.queen.manaRegenBonus;
-              const oldTE = this.resources.temporalEssence;
-              this.resources.temporalEssence += 1 + teBonus;
-              if (
-                Math.floor(this.resources.temporalEssence) > Math.floor(oldTE)
-              )
-                this.highlightResourceUpdate("temporalEssenceDisplay", false);
-              const oldAM = this.resources.arcaneMana;
-              this.resources.arcaneMana += manaBonus;
-              if (this.resources.arcaneMana.toFixed(1) !== oldAM.toFixed(1))
-                this.highlightResourceUpdate("arcaneManaDisplay", false);
-              this.updateUI();
-            },
-            1000
-          );
-        },
-        highlightResourceUpdate(elementId, playSound = true) {
-          /* ... (same as Iteration 11) ... */ const el =
-            document.getElementById(elementId);
-          if (el) {
-            el.classList.add("highlight-resource");
-            if (playSound) this.playSound("resource_gain");
-            setTimeout(() => el.classList.remove("highlight-resource"), 300);
-          }
+        handleResize() {
+            // Optionally re-evaluate panel states on resize, e.g., collapse if screen becomes small
+            // For now, just ensuring the 3D canvas resizes correctly is handled in setupThreeJS
         },
 
-        togglePanel(panelSide, forceCollapse = null) {
-          const panel = document.getElementById(`${panelSide}-panel`);
-          const otherPanelSide = panelSide === "left" ? "right" : "left";
-          const otherPanel = document.getElementById(`${otherPanelSide}-panel`);
-          const toggleButton = document.getElementById(
-            `toggle-${panelSide}-panel`
-          );
-          const otherToggleButton = document.getElementById(
-            `toggle-${otherPanelSide}-panel`
-          );
+        setupAutoSave() {
+            // Interval saving
+            this.autoSaveInterval = setInterval(() => {
+                this.saveGame(true); // Pass true to suppress frequent logging
+            }, this.autoSaveFrequency);
+            this.log(`Auto-save enabled every ${this.autoSaveFrequency / 1000} seconds.`);
 
-          if (panel) {
-            const isCollapsing =
-              forceCollapse !== null
-                ? forceCollapse
-                : !panel.classList.contains("collapsed");
-
-            if (isCollapsing) {
-              panel.classList.add("collapsed");
-              toggleButton.innerHTML = "☰"; // Hamburger icon
-              if (otherToggleButton)
-                otherToggleButton.classList.remove("hidden-by-other");
-            } else {
-              // Before opening this panel, ensure the other is collapsed if on small screen
-              if (
-                window.innerWidth <= 768 &&
-                !otherPanel.classList.contains("collapsed")
-              ) {
-                otherPanel.classList.add("collapsed");
-                document.getElementById(
-                  `toggle-${otherPanelSide}-panel`
-                ).innerHTML = "☰";
-              }
-              panel.classList.remove("collapsed");
-              toggleButton.innerHTML = "✕"; // X icon
-              if (otherToggleButton)
-                otherToggleButton.classList.add("hidden-by-other");
-            }
-          }
-          this.playSound("click");
-          // Slight delay to allow CSS transition before resizing Three.js canvas
-          setTimeout(() => {
-            const container = document.getElementById("threejs-container");
-            if (
-              this.threeRenderer &&
-              container &&
-              container.clientWidth > 0 &&
-              container.clientHeight > 0
-            ) {
-              this.threeCamera.aspect =
-                container.clientWidth / container.clientHeight;
-              this.threeCamera.updateProjectionMatrix();
-              this.threeRenderer.setSize(
-                container.clientWidth,
-                container.clientHeight
-              );
-            }
-          }, 350); // Match CSS transition duration
-        },
-
-        setGameSpeed(multiplier) {
-          this.gameSpeedMultiplier = multiplier;
-          this.log(`Game speed set to ${multiplier}x.`);
-          this.playSound("click");
-
-          if (multiplier === 1)
-            this.aiSearchDepth =
-              this.baseAiSearchDepth + 1; // More time, deeper search
-          else if (multiplier === 2)
-            this.aiSearchDepth = Math.max(
-              1,
-              this.baseAiSearchDepth - 1
-            ); // Less time, shallower search
-          else this.aiSearchDepth = this.baseAiSearchDepth;
-
-          if (this.isEncounterActive && this.autobattleInterval) {
-            clearInterval(this.autobattleInterval);
-            const intervalTime =
-              (this.autobattleBaseIntervalTime + this.ANIMATION_DURATION_MS) /
-              this.gameSpeedMultiplier;
-            this.autobattleInterval = setInterval(async () => {
-              if (
-                !this.isEncounterActive ||
-                (this.chessInstance && this.chessInstance.game_over())
-              ) {
-                this.endEncounter(
-                  this.chessInstance &&
-                    this.chessInstance.game_over() &&
-                    !this.chessInstance.in_draw()
-                );
-                return;
-              }
-              await this.makeAutobattleMove();
-            }, intervalTime);
-          }
-          this.updateGameSpeedButtons();
-        },
-        updateGameSpeedButtons() {
-          /* ... (same as Iteration 11) ... */ document
-            .getElementById("speedBtn1x")
-            .classList.toggle("selected-speed", this.gameSpeedMultiplier === 1);
-          document
-            .getElementById("speedBtn2x")
-            .classList.toggle("selected-speed", this.gameSpeedMultiplier === 2);
-        },
-        evolvePiece(pieceType, attribute, value = null) {
-          /* ... (same as Iteration 11) ... */ const pieceConfig =
-            this.pieces[pieceType];
-          if (!pieceConfig) {
-            this.log(`ERROR: Unknown piece type: ${pieceType}`);
-            this.playSound("error");
-            return;
-          }
-          const costFunction = pieceConfig.evolutionCosts[attribute];
-          if (!costFunction) {
-            this.log(`ERROR: Unknown attribute ${attribute} for ${pieceType}`);
-            this.playSound("error");
-            return;
-          }
-          let currentVal = pieceConfig[attribute];
-          if (attribute === "setPromotionPreference") currentVal = undefined;
-          const cost = Math.ceil(costFunction(currentVal));
-          const currencyMap = {
-            marchSpeed: "temporalEssence",
-            resilience: "mnemonicDust",
-            setPromotionPreference: "mnemonicDust",
-            dashChance: "mnemonicDust",
-            dashCooldown: "temporalEssence",
-            snipeRange: "mnemonicDust",
-            consecrationTurns: "temporalEssence",
-            entrenchThreshold: "temporalEssence",
-            entrenchPower: "mnemonicDust",
-            dominanceAuraRange: "mnemonicDust",
-            manaRegenBonus: "temporalEssence",
-            royalDecreeUses: "mnemonicDust",
-            lastStandThreshold: "temporalEssence",
-          };
-          const currency = currencyMap[attribute];
-          if (!currency) {
-            this.log(`ERROR: No currency for attribute ${attribute}`);
-            this.playSound("error");
-            return;
-          }
-          if (this.resources[currency] >= cost) {
-            let success = false;
-            switch (`${pieceType}-${attribute}`) {
-              case "pawn-marchSpeed":
-                pieceConfig.marchSpeed++;
-                success = true;
-                break;
-              case "pawn-resilience":
-                pieceConfig.resilience++;
-                success = true;
-                break;
-              case "pawn-setPromotionPreference":
-                if (["q", "n", "r", "b"].includes(value)) {
-                  pieceConfig.promotionPreference = value;
-                  success = true;
-                } else {
-                  this.log(`Invalid promotion preference: ${value}`);
-                }
-                break;
-              case "knight-dashChance":
-                if (pieceConfig.dashChance < 0.8) {
-                  pieceConfig.dashChance = parseFloat(
-                    (pieceConfig.dashChance + 0.05).toFixed(2)
-                  );
-                  success = true;
-                } else {
-                  this.log("Max Dash Chance reached.");
-                }
-                break;
-              case "knight-dashCooldown":
-                if (pieceConfig.dashCooldown > 1) {
-                  pieceConfig.dashCooldown--;
-                  success = true;
-                } else {
-                  this.log("Min Dash Cooldown reached.");
-                }
-                break;
-              case "bishop-snipeRange":
-                if (pieceConfig.snipeRange < 5) {
-                  pieceConfig.snipeRange++;
-                  success = true;
-                } else {
-                  this.log("Max Snipe Range reached.");
-                }
-                break;
-              case "bishop-consecrationTurns":
-                if (pieceConfig.consecrationTurns > 1) {
-                  pieceConfig.consecrationTurns--;
-                  success = true;
-                } else {
-                  this.log("Min Consecration Turns reached.");
-                }
-                break;
-              case "rook-entrenchThreshold":
-                if (pieceConfig.entrenchThreshold > 1) {
-                  pieceConfig.entrenchThreshold--;
-                  success = true;
-                } else {
-                  this.log("Min Entrench Threshold reached.");
-                }
-                break;
-              case "rook-entrenchPower":
-                if (pieceConfig.entrenchPower < 5) {
-                  pieceConfig.entrenchPower++;
-                  success = true;
-                } else {
-                  this.log("Max Entrench Power reached.");
-                }
-                break;
-              case "queen-dominanceAuraRange":
-                if (pieceConfig.dominanceAuraRange < 3) {
-                  pieceConfig.dominanceAuraRange++;
-                  success = true;
-                } else {
-                  this.log("Max Dominance Aura Range reached.");
-                }
-                break;
-              case "queen-manaRegenBonus":
-                if (pieceConfig.manaRegenBonus < 1.0) {
-                  pieceConfig.manaRegenBonus = parseFloat(
-                    (pieceConfig.manaRegenBonus + 0.1).toFixed(1)
-                  );
-                  success = true;
-                } else {
-                  this.log("Max Mana Regen Bonus reached.");
-                }
-                break;
-              case "king-royalDecreeUses":
-                if (pieceConfig.royalDecreeUses < 3) {
-                  pieceConfig.royalDecreeUses++;
-                  success = true;
-                } else {
-                  this.log("Max Royal Decree Uses reached.");
-                }
-                break;
-              case "king-lastStandThreshold":
-                if (pieceConfig.lastStandThreshold < 0.5) {
-                  pieceConfig.lastStandThreshold = parseFloat(
-                    (pieceConfig.lastStandThreshold + 0.05).toFixed(2)
-                  );
-                  success = true;
-                } else {
-                  this.log("Max Last Stand Threshold reached.");
-                }
-                break;
-              default:
-                this.log(`Unhandled evolution: ${pieceType}-${attribute}`);
-            }
-            if (success) {
-              this.resources[currency] -= cost;
-              this.log(`${pieceType}'s ${attribute} evolved.`);
-              this.playSound("evolve");
-              let displayId = "";
-              if (currency === "temporalEssence")
-                displayId = "temporalEssenceDisplay";
-              else if (currency === "mnemonicDust")
-                displayId = "mnemonicDustDisplay";
-              if (displayId) this.highlightResourceUpdate(displayId, true);
-            } else {
-              this.playSound("error");
-            }
-          } else {
-            this.log(
-              `Insufficient ${currency
-                .replace(/([A-Z])/g, " $1")
-                .toUpperCase()}. Need ${cost}. You have ${Math.floor(
-                this.resources[currency]
-              )}.`
-            );
-            this.playSound("error");
-          }
-          this.updateUI();
-        },
-        initializeEncounterPieceStates() {
-          /* ... (same as Iteration 11) ... */ this.encounterPieceStates = {};
-          if (!this.chessInstance) return;
-          const board = this.chessInstance.board();
-          for (let r = 0; r < 8; r++)
-            for (let f = 0; f < 8; f++) {
-              const d = board[r][f];
-              if (d) {
-                const a = `${String.fromCharCode(97 + f)}${8 - r}`;
-                this.encounterPieceStates[a] = {
-                  type: d.type,
-                  color: d.color,
-                  turnsStationary: 0,
-                  isEntrenched: false,
-                  isConsecratedSource: false,
-                  isReceivingConsecration: false,
-                  isDominated: false,
-                };
-              }
-            }
-          this.applyAurasAndStaticEffects();
-        },
-        updateEncounterPieceStates(move) {
-          /* ... (same as Iteration 11) ... */ const pSS = this
-            .encounterPieceStates[move.from]
-            ? { ...this.encounterPieceStates[move.from] }
-            : null;
-          if (move.from && this.encounterPieceStates[move.from])
-            delete this.encounterPieceStates[move.from];
-          const mPD = this.chessInstance.get(move.to);
-          if (mPD) {
-            this.encounterPieceStates[move.to] = {
-              type: mPD.type,
-              color: mPD.color,
-              turnsStationary: 0,
-              isEntrenched: false,
-              isConsecratedSource: false,
-              isReceivingConsecration: false,
-              isDominated: false,
-            };
-          }
-          const pWM = this.chessInstance.turn() === "w" ? "b" : "w";
-          for (const sq in this.encounterPieceStates) {
-            const pS = this.encounterPieceStates[sq];
-            if (pS.color === pWM && sq !== move.to) {
-              pS.turnsStationary++;
-              if (
-                pS.type === "r" &&
-                this.pieces.rook &&
-                !pS.isEntrenched &&
-                pS.turnsStationary >= this.pieces.rook.entrenchThreshold
-              ) {
-                pS.isEntrenched = true;
-                this.log(`Rook@${sq} ENTRENCHED!`);
-                this.playSound("rook_entrench");
-                this.triggerRookEntrenchVFX(sq);
-              }
-              if (
-                pS.type === "b" &&
-                this.pieces.bishop &&
-                !pS.isConsecratedSource &&
-                pS.turnsStationary >= this.pieces.bishop.consecrationTurns
-              ) {
-                pS.isConsecratedSource = true;
-                this.log(`Bishop@${sq} CONSECRATING!`);
-                this.playSound("bishop_consecrate");
-              }
-            }
-          }
-          this.applyAurasAndStaticEffects();
-        },
-        applyAurasAndStaticEffects() {
-          /* ... (same as Iteration 11) ... */ if (
-            !this.isEncounterActive ||
-            !this.chessInstance
-          )
-            return;
-          for (const sq in this.encounterPieceStates) {
-            this.encounterPieceStates[sq].isReceivingConsecration = false;
-            this.encounterPieceStates[sq].isDominated = false;
-          }
-          const bS = Object.keys(this.encounterPieceStates);
-          for (const sSq of bS) {
-            const sPS = this.encounterPieceStates[sSq];
-            if (!sPS) continue;
-            if (
-              sPS.type === "b" &&
-              sPS.isConsecratedSource &&
-              this.pieces.bishop
-            ) {
-              const [f, rk] = [sSq.charCodeAt(0) - 97, parseInt(sSq[1]) - 1];
-              const cT = [
-                [f - 1, rk - 1],
-                [f + 1, rk - 1],
-                [f - 1, rk + 1],
-                [f + 1, rk + 1],
-              ];
-              cT.forEach(([tF, tR]) => {
-                if (tF >= 0 && tF < 8 && tR >= 0 && tR < 8) {
-                  const tSA = `${String.fromCharCode(97 + tF)}${tR + 1}`;
-                  const tPS = this.encounterPieceStates[tSA];
-                  if (tPS && tPS.color === sPS.color)
-                    tPS.isReceivingConsecration = true;
-                }
-              });
-            }
-            if (sPS.type === "q" && this.pieces.queen) {
-              const [qF, qR] = [sSq.charCodeAt(0) - 97, parseInt(sSq[1]) - 1];
-              const rng = this.pieces.queen.dominanceAuraRange;
-              for (const tSq of bS) {
-                if (sSq === tSq) continue;
-                const tPS = this.encounterPieceStates[tSq];
-                if (tPS && tPS.color !== sPS.color) {
-                  const [tF, tR] = [
-                    tSq.charCodeAt(0) - 97,
-                    parseInt(tSq[1]) - 1,
-                  ];
-                  const dst = Math.max(Math.abs(qF - tF), Math.abs(qR - tR));
-                  if (dst <= rng) {
-                    tPS.isDominated = true;
-                  }
-                }
-              }
-            }
-          }
-        },
-        startEncounter() {
-          /* ... (same as Iteration 11) ... */ this.playSound(
-            "encounter_start"
-          );
-          if (this.isEncounterActive) return;
-          this.isEncounterActive = true;
-          this.knightGlobalDashCooldownTurnsRemaining = 0;
-          document.getElementById("startEncounterBtn").disabled = true;
-          document.getElementById("endEncounterBtn").style.display =
-            "inline-block";
-          this.currentEncounter = {
-            name: "Temporal Nexus",
-            description: "Echoes intensify! Control the flow of time!",
-            opponentAI: "minimax",
-          };
-          document.getElementById(
-            "narrative-display"
-          ).innerHTML = `<p><em>${this.currentEncounter.name}</em></p><p>${this.currentEncounter.description}</p><p>The Chronos Anomaly is unstable... Engage!</p>`;
-          this.log(`New Encounter: ${this.currentEncounter.name}`);
-          this.chessInstance = new Chess();
-          this.initializeEncounterPieceStates();
-          this.updateChessUI();
-          this.updateThreeJSBoardFromFEN(this.chessInstance.fen(), true);
-          const intervalTime =
-            (this.autobattleBaseIntervalTime + this.ANIMATION_DURATION_MS) /
-            this.gameSpeedMultiplier;
-          this.autobattleInterval = setInterval(async () => {
-            if (
-              !this.isEncounterActive ||
-              (this.chessInstance && this.chessInstance.game_over())
-            ) {
-              this.endEncounter(
-                this.chessInstance &&
-                  this.chessInstance.game_over() &&
-                  !this.chessInstance.in_draw()
-              );
-              return;
-            }
-            await this.makeAutobattleMove();
-          }, intervalTime);
-        },
-        async makeAutobattleMove() {
-          /* ... (same as Iteration 11) ... */ if (
-            !this.chessInstance ||
-            this.chessInstance.game_over()
-          )
-            return;
-          if (this.knightGlobalDashCooldownTurnsRemaining > 0)
-            this.knightGlobalDashCooldownTurnsRemaining--;
-          this.updateUICooldownDisplay();
-          const aMO = this.getBestMoveAI(
-            this.chessInstance,
-            this.aiSearchDepth
-          );
-          if (!aMO || !aMO.move) {
-            this.log("AI failed. Random fallback.");
-            const rMs = this.chessInstance.moves({ verbose: true });
-            if (rMs.length > 0)
-              aMO.move = rMs[Math.floor(Math.random() * rMs.length)];
-            else {
-              this.endEncounter(false);
-              return;
-            }
-          }
-          const mv = aMO.move;
-          document.getElementById("aiEvaluationScore").textContent =
-            aMO.score.toFixed(2);
-          const pT = this.chessInstance.get(mv.from).type;
-          const pC = this.chessInstance.get(mv.from).color;
-          let promoT = undefined;
-          if (mv.flags.includes("p") && pT === "p" && this.pieces.pawn)
-            promoT = this.pieces.pawn.promotionPreference;
-          const mPData = this.threePieces[mv.from];
-          let cPData = null;
-          if (mv.captured) cPData = this.threePieces[mv.to];
-          const cjsMv = this.chessInstance.move(
-            promoT ? { from: mv.from, to: mv.to, promotion: promoT } : mv.san
-          );
-          if (cjsMv) {
-            this.log(
-              `Auto (${pC.toUpperCase()}): ${pT.toUpperCase()} ${
-                cjsMv.san
-              } (Eval: ${aMO.score.toFixed(2)})`
-            );
-            this.playSound(cjsMv.captured ? "capture" : "move");
-            if (mPData && mPData.group) {
-              const tP3D = this.getThreeJSPosition(mv.to);
-              this.animationJobs.push({
-                group: mPData.group,
-                startPos: mPData.group.position.clone(),
-                targetPos: tP3D,
-                startTime: performance.now(),
-                duration: this.ANIMATION_DURATION_MS,
-                fromAlg: mv.from,
-                toAlg: mv.to,
-                pieceData: mPData,
-                capturedGroup: cPData ? cPData.group : null,
-                capturedAlg: cPData ? mv.to : null,
-              });
-              mPData.isAnimating = true;
-              if (cPData) cPData.isAnimating = true;
-            }
-            this.updateEncounterPieceStates(cjsMv);
-            this.updateChessUI();
-            this.updateThreeJSBoardFromFEN(this.chessInstance.fen());
-            this.flashPiece(mv.to);
-            if (
-              pT === "n" &&
-              this.pieces.knight &&
-              !this.chessInstance.game_over()
-            ) {
-              if (
-                Math.random() < this.pieces.knight.dashChance &&
-                this.knightGlobalDashCooldownTurnsRemaining === 0
-              ) {
-                this.log(`Knight@${mv.to} attempts Dash!`);
-                await new Promise((r) =>
-                  setTimeout(r, this.ANIMATION_DURATION_MS / 2)
-                );
-                await this.performKnightDash(mv.to, pC);
-              }
-            }
-          } else {
-            this.log(`ERROR: AI move ${mv.san} failed.`);
-            this.endEncounter(false);
-          }
-        },
-        async performKnightDash(fromSq, kColor) {
-          /* ... (same as Iteration 11) ... */ const kP =
-            this.chessInstance.get(fromSq);
-          if (!kP || kP.type !== "n" || kP.color !== kColor) {
-            this.log("Dash cancelled.");
-            return;
-          }
-          const dMs = this.chessInstance.moves({
-            square: fromSq,
-            verbose: true,
-          });
-          if (dMs.length > 0) {
-            const dM = dMs[Math.floor(Math.random() * dMs.length)];
-            this.log(`Knight DASH! ${fromSq}->${dM.to}`);
-            this.playSound("knight_dash");
-            this.triggerKnightDashVFX(fromSq, dM.to);
-            const mPData = this.threePieces[fromSq];
-            let cPData = null;
-            if (dM.captured) cPData = this.threePieces[dM.to];
-            const cjsDM = this.chessInstance.move(dM.san);
-            if (cjsDM) {
-              if (mPData && mPData.group) {
-                const tP3D = this.getThreeJSPosition(dM.to);
-                this.animationJobs.push({
-                  group: mPData.group,
-                  startPos: mPData.group.position.clone(),
-                  targetPos: tP3D,
-                  startTime: performance.now(),
-                  duration: this.ANIMATION_DURATION_MS * 0.6,
-                  fromAlg: fromSq,
-                  toAlg: dM.to,
-                  pieceData: mPData,
-                  capturedGroup: cPData ? cPData.group : null,
-                  capturedAlg: cPData ? dM.to : null,
-                });
-                mPData.isAnimating = true;
-                if (cPData) cPData.isAnimating = true;
-              }
-              this.knightGlobalDashCooldownTurnsRemaining =
-                this.pieces.knight.dashCooldown;
-              this.updateUICooldownDisplay();
-              this.log(`Dash Mv: ${cjsDM.san}`);
-              this.updateEncounterPieceStates(cjsDM);
-            } else {
-              this.log(`ERR: Dash ${dM.san} fail.`);
-              return;
-            }
-            this.updateChessUI();
-            this.updateThreeJSBoardFromFEN(this.chessInstance.fen());
-            this.flashPiece(dM.to, true);
-          } else {
-            this.log(`Knight@${fromSq} no dash moves.`);
-          }
-        },
-        triggerKnightDashVFX(fromAlg, toAlg) {
-          /* ... (same as Iteration 11) ... */ const sP =
-            this.getThreeJSPosition(fromAlg);
-          const eP = this.getThreeJSPosition(toAlg);
-          const nP = 10;
-          const tD = this.ANIMATION_DURATION_MS * 0.5;
-          for (let i = 0; i < nP; i++) {
-            const pD = (i / nP) * tD * 0.3;
-            setTimeout(() => {
-              const p = this.getVFXObject("dash_trail");
-              const sProg = (i + Math.random()) / nP;
-              p.position.lerpVectors(sP, eP, sProg);
-              p.position.y += 0.2;
-              this.threeBoardGroup.add(p);
-              const life = tD * (0.5 + Math.random() * 0.5);
-              this.vfxObjects.push({
-                mesh: p,
-                startTime: performance.now() + pD,
-                duration: life,
-                type: "dash_trail",
-              });
-            }, pD);
-          }
-        },
-        triggerRookEntrenchVFX(alg) {
-          /* ... (same as Iteration 11) ... */ const pE = this.threePieces[alg];
-          if (pE && pE.shieldMesh) {
-            const s = pE.shieldMesh;
-            const oS = s.scale.clone();
-            const pD = 300;
-            let pSt = performance.now();
-            function aP(ts) {
-              const el = ts - pSt;
-              const prog = Math.min(el / pD, 1);
-              const sF = 1 + 0.3 * Math.sin(prog * Math.PI);
-              s.scale.set(oS.x * sF, oS.y * sF, oS.z * sF);
-              s.material.opacity = 0.3 + 0.4 * Math.sin(prog * Math.PI);
-              if (prog < 1) requestAnimationFrame(aP.bind(this));
-              else {
-                s.scale.copy(oS);
-                s.material.opacity = this.pieceMaterials.shield.opacity;
-              }
-            }
-            requestAnimationFrame(aP.bind(this));
-          }
-        },
-        getVFXObject(type) {
-          /* ... (same as Iteration 11) ... */ if (type === "dash_trail") {
-            const particleGeom = new THREE.SphereGeometry(
-              0.05 + Math.random() * 0.05,
-              6,
-              4
-            );
-            return new THREE.Mesh(
-              particleGeom,
-              this.knightDashParticleMaterial.clone()
-            );
-          } else if (type === "dominated_effect") {
-            const pG = new THREE.BufferGeometry();
-            const pos = [];
-            for (let i = 0; i < 15; i++)
-              pos.push(
-                (Math.random() - 0.5) * 0.8 * this.basePieceScale,
-                (Math.random() * 0.6 + 0.1) * this.basePieceScale,
-                (Math.random() - 0.5) * 0.8 * this.basePieceScale
-              );
-            pG.setAttribute(
-              "position",
-              new THREE.Float32BufferAttribute(pos, 3)
-            );
-            return new THREE.Points(pG, this.dominanceEffectMaterial.clone());
-          } else if (type === "consecration_receiver") {
-            const pG = new THREE.BufferGeometry();
-            const pos = [];
-            for (let i = 0; i < 25; i++)
-              pos.push(
-                (Math.random() - 0.5) * 1.2 * this.basePieceScale,
-                (Math.random() * 0.4 + 0.05) * this.basePieceScale,
-                (Math.random() - 0.5) * 1.2 * this.basePieceScale
-              );
-            pG.setAttribute(
-              "position",
-              new THREE.Float32BufferAttribute(pos, 3)
-            );
-            return new THREE.Points(
-              pG,
-              this.consecrationReceiverMaterial.clone()
-            );
-          }
-          return null;
-        },
-        releaseVFXObject(vfx) {
-          /* ... (same as Iteration 11) ... */ if (vfx.mesh.geometry)
-            vfx.mesh.geometry.dispose();
-          if (vfx.mesh.material) vfx.mesh.material.dispose();
-        },
-        updateVFX(now) {
-          /* ... (same as Iteration 11) ... */ this.vfxObjects =
-            this.vfxObjects.filter((vfx) => {
-              const el = now - vfx.startTime;
-              const prog = Math.min(el / vfx.duration, 1);
-              if (vfx.type === "dash_trail") {
-                vfx.mesh.material.opacity = 1.0 - prog;
-                vfx.mesh.scale.setScalar(1.0 - prog * 0.5);
-              } else if (
-                vfx.type === "dominated_effect" ||
-                vfx.type === "consecration_receiver"
-              ) {
-                vfx.mesh.material.opacity = Math.sin(prog * Math.PI) * 0.6;
-              }
-              if (prog >= 1) {
-                this.threeBoardGroup.remove(vfx.mesh);
-                this.releaseVFXObject(vfx);
-                return false;
-              }
-              return true;
+            // Save before closing
+            window.addEventListener('beforeunload', (event) => {
+                this.log('Attempting save before unload...');
+                this.saveGame(false); // Log this save attempt
+                // Standard practice: some browsers might require this boilerplate
+                // event.preventDefault(); // Not always needed/allowed
+                // event.returnValue = ''; // Legacy support
             });
         },
-        flashPiece(alg, isDash = false) {
-          /* ... (same as Iteration 11) ... */ const pE = this.threePieces[alg];
-          if (pE && pE.group && !pE.isAnimating) {
-            const pG = pE.group;
-            const oMs = [];
-            pG.traverse((c) => {
-              if (c.isMesh) {
-                oMs.push({ obj: c, mat: c.material });
-                c.material = this.abilityFlashMaterial.clone();
-              }
-            });
-            if (isDash)
-              pG.scale.set(
-                this.basePieceScale * 1.1,
-                this.basePieceScale * 1.2,
-                this.basePieceScale * 1.1
-              );
-            setTimeout(() => {
-              if (pG) {
-                oMs.forEach((i) => {
-                  if (i.obj && i.obj.material) i.obj.material = i.mat;
-                });
-                if (isDash)
-                  pG.scale.set(
-                    this.basePieceScale,
-                    this.basePieceScale,
-                    this.basePieceScale
-                  );
-                if (this.encounterPieceStates[alg])
-                  this.updateThreeJSPieceAppearance(
-                    alg,
-                    this.encounterPieceStates[alg]
-                  );
-              }
-            }, 500);
-          }
+
+
+        initAudio() { /* ... (same as Iteration 12) ... */ try { this.audioContext = new (window.AudioContext || window.webkitAudioContext)(); this.masterGain = this.audioContext.createGain(); this.masterGain.gain.setValueAtTime(0.3, this.audioContext.currentTime); this.masterGain.connect(this.audioContext.destination); this.log("Audio system online."); } catch (e) { this.log("Audio init error: " + e.message); this.audioContext = null; } },
+        playSound(type = 'click', volume = 1, duration = 0.1, freq1 = 440, freq2 = 880) { /* ... (same as Iteration 12) ... */ if (!this.audioContext || !this.masterGain) return; const osc = this.audioContext.createOscillator(); const gain = this.audioContext.createGain(); osc.connect(gain); gain.connect(this.masterGain); let wave = 'sine'; switch(type) { case 'click': wave = 'triangle'; duration = 0.05; freq1=900; freq2=1300; volume=0.25; break; case 'move': wave = 'sine'; duration = 0.1; freq1=330; freq2=440; volume=0.35; break; case 'capture': wave = 'noise'; duration = 0.2; volume=0.4; gain.gain.setValueAtTime(volume, this.audioContext.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration); osc.type = wave; osc.start(); osc.stop(this.audioContext.currentTime + duration); return; case 'knight_dash': wave = 'sawtooth'; duration = 0.15; freq1=800; freq2=1500; volume=0.45; break; case 'rook_entrench': wave = 'square'; duration = 0.3; freq1=100; freq2=150; volume=0.5; break; case 'bishop_consecrate': wave = 'triangle'; duration = 0.4; freq1=500; freq2=800; volume=0.3; break; case 'queen_dominate': wave = 'sawtooth'; duration = 0.35; freq1=250; freq2=180; volume=0.4; break; case 'error': wave = 'square'; duration = 0.2; freq1=200; freq2=120; volume=0.3; break; case 'evolve': wave = 'sine'; duration = 0.3; freq1=600; freq2=1200; volume=0.4; break; case 'resource_gain': wave = 'triangle'; duration = 0.08; freq1=1200; freq2=1800; volume=0.15; break; case 'encounter_start': wave = 'sawtooth'; duration = 0.5; freq1=150; freq2=400; volume=0.5; break; case 'encounter_win': wave = 'sine'; duration = 0.6; freq1=523; freq2=783; volume=0.5; break; case 'encounter_lose': wave = 'square'; duration = 0.6; freq1=300; freq2=100; volume=0.5; break; } osc.type = wave; osc.frequency.setValueAtTime(freq1, this.audioContext.currentTime); osc.frequency.linearRampToValueAtTime(freq2, this.audioContext.currentTime + duration * 0.8); gain.gain.setValueAtTime(volume, this.audioContext.currentTime); gain.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration); osc.start(this.audioContext.currentTime); osc.stop(this.audioContext.currentTime + duration); },
+        log(message) { /* ... (same as Iteration 12) ... */ const lE = document.getElementById("gameLog"); const ts = `[${new Date().toLocaleTimeString()}]`; lE.textContent = `${ts} ${message}\n` + lE.textContent; if (lE.textContent.length > 10000) lE.textContent = lE.textContent.substring(0, 10000) + "\n... (log truncated)"; },
+        setupIdleGeneration() { /* ... (same as Iteration 12) ... */ setInterval(() => { let teBonus = 0, manaBonus = 0.05; if (this.pieces.pawn) teBonus += this.pieces.pawn.marchSpeed * 0.1; if (this.pieces.queen) manaBonus += this.pieces.queen.manaRegenBonus; const oldTE = this.resources.temporalEssence; this.resources.temporalEssence += (1 + teBonus); if (Math.floor(this.resources.temporalEssence) > Math.floor(oldTE)) this.highlightResourceUpdate('temporalEssenceDisplay', false); const oldAM = this.resources.arcaneMana; this.resources.arcaneMana += manaBonus; if (this.resources.arcaneMana.toFixed(1) !== oldAM.toFixed(1)) this.highlightResourceUpdate('arcaneManaDisplay', false); this.updateUI(); }, 1000); },
+        highlightResourceUpdate(elementId, playSound = true) { /* ... (same as Iteration 12) ... */ const el = document.getElementById(elementId); if (el) { el.classList.add('highlight-resource'); if (playSound) this.playSound('resource_gain'); setTimeout(() => el.classList.remove('highlight-resource'), 300); } },
+        
+        togglePanel(panelSide, forceCollapse = null) { /* ... (same as Iteration 12) ... */ const panel = document.getElementById(`${panelSide}-panel`); const otherPanelSide = panelSide === 'left' ? 'right' : 'left'; const otherPanel = document.getElementById(`${otherPanelSide}-panel`); const toggleButton = document.getElementById(`toggle-${panelSide}-panel`); const otherToggleButton = document.getElementById(`toggle-${otherPanelSide}-panel`); if (panel) { const isCollapsing = forceCollapse !== null ? forceCollapse : !panel.classList.contains('collapsed'); if (isCollapsing) { panel.classList.add('collapsed'); toggleButton.innerHTML = '☰'; if(otherToggleButton) otherToggleButton.classList.remove('hidden-by-other'); } else { if (window.innerWidth <= 768 && otherPanel && !otherPanel.classList.contains('collapsed')) { otherPanel.classList.add('collapsed'); const otherBtn = document.getElementById(`toggle-${otherPanelSide}-panel`); if(otherBtn) otherBtn.innerHTML = '☰'; } panel.classList.remove('collapsed'); toggleButton.innerHTML = '✕'; if(otherToggleButton) otherToggleButton.classList.add('hidden-by-other'); } } this.playSound('click'); setTimeout(() => { const container = document.getElementById("threejs-container"); if (this.threeRenderer && container && container.clientWidth > 0 && container.clientHeight > 0) { this.threeCamera.aspect = container.clientWidth / container.clientHeight; this.threeCamera.updateProjectionMatrix(); this.threeRenderer.setSize(container.clientWidth, container.clientHeight); } }, 350); },
+
+        mobileCameraControl(action) {
+            this.playSound('click', 0.5);
+            // Placeholder - implement actual camera logic later
+            this.log(`Mobile Control Action: ${action}`);
+            // Example future logic:
+            // switch(action) {
+            //     case 'zoomIn': this.threeCamera.fov = Math.max(20, this.threeCamera.fov - 5); this.threeCamera.updateProjectionMatrix(); break;
+            //     case 'zoomOut': this.threeCamera.fov = Math.min(75, this.threeCamera.fov + 5); this.threeCamera.updateProjectionMatrix(); break;
+            //     case 'rotateLeft': this.threeBoardGroup.rotation.y += Math.PI / 16; break;
+            //     case 'rotateRight': this.threeBoardGroup.rotation.y -= Math.PI / 16; break;
+            // }
         },
-        endEncounter(pW, f = false) {
-          /* ... (same as Iteration 11) ... */ if (!this.isEncounterActive)
-            return;
-          this.playSound(pW ? "encounter_win" : f ? "error" : "encounter_lose");
-          clearInterval(this.autobattleInterval);
-          this.autobattleInterval = null;
-          this.encounterPieceStates = {};
-          this.animationJobs = [];
-          this.vfxObjects.forEach((vfx) => {
-            this.threeBoardGroup.remove(vfx.mesh);
-            this.releaseVFXObject(vfx);
-          });
-          this.vfxObjects = [];
-          document.getElementById("aiEvaluationScore").textContent = "0";
-          let oM;
-          if (f) {
-            oM = "Forfeited. 1 MD.";
-            this.resources.mnemonicDust += 1;
-          } else if (pW) {
-            const asE =
-              Math.random() < 0.25 ? (Math.random() < 0.5 ? 1 : 2) : 0;
-            oM = `Victory! 15 MD${asE > 0 ? ` & ${asE} AS!` : "."}`;
-            this.resources.mnemonicDust += 15;
-            this.resources.aetherShards += asE;
-            if (asE > 0)
-              this.highlightResourceUpdate("aetherShardsDisplay", true);
-            this.highlightResourceUpdate("mnemonicDustDisplay", true);
-          } else {
-            if (
-              this.chessInstance &&
-              (this.chessInstance.in_stalemate() ||
-                this.chessInstance.in_draw() ||
-                this.chessInstance.insufficient_material() ||
-                this.chessInstance.in_threefold_repetition())
-            ) {
-              oM = "Draw. 5 MD.";
-              this.resources.mnemonicDust += 5;
-            } else {
-              oM = "Defeat. 3 MD.";
-              this.resources.mnemonicDust += 3;
-            }
-            this.highlightResourceUpdate("mnemonicDustDisplay", true);
-          }
-          this.log(oM);
-          document.getElementById(
-            "narrative-display"
-          ).innerHTML = `<p><em>${oM}</em></p><p>The timeline stabilizes... for now.</p>`;
-          this.isEncounterActive = false;
-          this.currentEncounter = null;
-          document.getElementById("startEncounterBtn").disabled = false;
-          document.getElementById("endEncounterBtn").style.display = "none";
-          this.updateUI();
+
+        setGameSpeed(multiplier) { 
+            this.gameSpeedMultiplier = multiplier;
+            this.log(`Game speed set to ${multiplier}x.`);
+            this.playSound('click');
+            // Removed dynamic AI depth change for now
+            this.aiSearchDepth = this.baseAiSearchDepth; 
+
+            if (this.isEncounterActive && this.autobattleInterval) { 
+                clearInterval(this.autobattleInterval); 
+                const intervalTime = (this.autobattleBaseIntervalTime + this.ANIMATION_DURATION_MS) / this.gameSpeedMultiplier; 
+                this.autobattleInterval = setInterval(async () => { 
+                    if (!this.isEncounterActive || (this.chessInstance && this.chessInstance.game_over())) { 
+                        this.endEncounter(this.chessInstance && this.chessInstance.game_over() && !this.chessInstance.in_draw()); return; 
+                    } 
+                    await this.makeAutobattleMove(); 
+                }, intervalTime); 
+            } 
+            this.updateGameSpeedButtons(); 
         },
-        updateChessUI() {
-          /* ... (same as Iteration 11) ... */ const fe =
-              document.getElementById("board-fen"),
-            ae = document.getElementById("board-ascii"),
-            se = document.getElementById("game-status");
-          if (this.chessInstance) {
-            fe.textContent = this.chessInstance.fen();
-            ae.textContent = this.chessInstance.ascii();
-            let s = "";
-            const tp = this.chessInstance.turn() === "w" ? "White" : "Black";
-            if (this.chessInstance.in_checkmate()) {
-              s = `Checkmate! ${tp === "White" ? "Black" : "White"} wins.`;
-            } else if (this.chessInstance.in_draw()) {
-              s = "Draw!";
-            } else if (this.chessInstance.in_stalemate()) {
-              s = "Stalemate!";
-            } else if (this.chessInstance.in_threefold_repetition()) {
-              s = "Draw by 3-Rep!";
-            } else if (this.chessInstance.insufficient_material()) {
-              s = "Draw by Insuff. Mat.!";
-            } else {
-              s = `${tp}'s turn.`;
-              if (this.chessInstance.in_check()) s += " (Check!)";
-            }
-            se.textContent = s;
-          } else {
-            fe.textContent = "No game.";
-            ae.textContent = "---";
-            se.textContent = "Not started.";
-          }
-        },
-        updateUICooldownDisplay() {
-          /* ... (same as Iteration 11) ... */ document.getElementById(
-            "knightDashCooldownRemainingDisplay"
-          ).textContent = this.knightGlobalDashCooldownTurnsRemaining;
-        },
-        AI_ENTRENCH_BONUS_PER_POWER: 25,
-        AI_CONSECRATED_SOURCE_BONUS: 15,
-        AI_RECEIVING_CONSECRATION_BONUS: 10,
-        AI_DOMINATED_PENALTY: -40,
-        AI_QUEEN_AURA_RANGE_BONUS_PER_UNIT: 5,
-        AI_KNIGHT_DASH_READY_BONUS: 8,
-        pieceValues: { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 },
-        pst: {
-          /* ... (same as Iteration 11) ... */ p: [
-            [0, 0, 0, 0, 0, 0, 0, 0],
-            [50, 50, 50, 50, 50, 50, 50, 50],
-            [10, 10, 20, 30, 30, 20, 10, 10],
-            [5, 5, 10, 25, 25, 10, 5, 5],
-            [0, 0, 0, 20, 20, 0, 0, 0],
-            [5, -5, -10, 0, 0, -10, -5, 5],
-            [5, 10, 10, -20, -20, 10, 10, 5],
-            [0, 0, 0, 0, 0, 0, 0, 0],
-          ],
-          n: [
-            [-50, -40, -30, -30, -30, -30, -40, -50],
-            [-40, -20, 0, 0, 0, 0, -20, -40],
-            [-30, 0, 10, 15, 15, 10, 0, -30],
-            [-30, 5, 15, 20, 20, 15, 5, -30],
-            [-30, 0, 15, 20, 20, 15, 0, -30],
-            [-30, 5, 10, 15, 15, 10, 5, -30],
-            [-40, -20, 0, 5, 5, 0, -20, -40],
-            [-50, -40, -30, -30, -30, -30, -40, -50],
-          ],
-          b: [
-            [-20, -10, -10, -10, -10, -10, -10, -20],
-            [-10, 0, 0, 0, 0, 0, 0, -10],
-            [-10, 0, 5, 10, 10, 5, 0, -10],
-            [-10, 5, 5, 10, 10, 5, 5, -10],
-            [-10, 0, 10, 10, 10, 10, 0, -10],
-            [-10, 10, 10, 10, 10, 10, 10, -10],
-            [-10, 5, 0, 0, 0, 0, 5, -10],
-            [-20, -10, -10, -10, -10, -10, -10, -20],
-          ],
-          r: [
-            [0, 0, 0, 0, 0, 0, 0, 0],
-            [5, 10, 10, 10, 10, 10, 10, 5],
-            [-5, 0, 0, 0, 0, 0, 0, -5],
-            [-5, 0, 0, 0, 0, 0, 0, -5],
-            [-5, 0, 0, 0, 0, 0, 0, -5],
-            [-5, 0, 0, 0, 0, 0, 0, -5],
-            [-5, 0, 0, 0, 0, 0, 0, -5],
-            [0, 0, 0, 5, 5, 0, 0, 0],
-          ],
-          q: [
-            [-20, -10, -10, -5, -5, -10, -10, -20],
-            [-10, 0, 0, 0, 0, 0, 0, -10],
-            [-10, 0, 5, 5, 5, 5, 0, -10],
-            [-5, 0, 5, 5, 5, 5, 0, -5],
-            [0, 0, 5, 5, 5, 5, 0, -5],
-            [-10, 5, 5, 5, 5, 5, 0, -10],
-            [-10, 0, 5, 0, 0, 0, 0, -10],
-            [-20, -10, -10, -5, -5, -10, -10, -20],
-          ],
-          k: [
-            [-30, -40, -40, -50, -50, -40, -40, -30],
-            [-30, -40, -40, -50, -50, -40, -40, -30],
-            [-30, -40, -40, -50, -50, -40, -40, -30],
-            [-30, -40, -40, -50, -50, -40, -40, -30],
-            [-20, -30, -30, -40, -40, -30, -30, -20],
-            [-10, -20, -20, -20, -20, -20, -20, -10],
-            [20, 20, 0, 0, 0, 0, 20, 20],
-            [20, 30, 10, 0, 0, 10, 30, 20],
-          ],
-        },
-        evaluateBoard(cB, pC) {
-          /* ... (same as Iteration 11) ... */ let tE = 0;
-          const b = cB.board();
-          for (let r = 0; r < 8; r++)
-            for (let f = 0; f < 8; f++) {
-              const sD = b[r][f];
-              if (sD) {
-                let pV = this.pieceValues[sD.type] || 0;
-                const pTbl = this.pst[sD.type];
-                if (pTbl) pV += sD.color === "w" ? pTbl[r][f] : pTbl[7 - r][f];
-                const alg = `${String.fromCharCode(97 + f)}${8 - r}`;
-                const pS = this.encounterPieceStates[alg];
-                const pUp = this.pieces[sD.type];
-                if (pS) {
-                  if (pS.type === "r" && pS.isEntrenched && pUp)
-                    pV += pUp.entrenchPower * this.AI_ENTRENCH_BONUS_PER_POWER;
-                  if (pS.isConsecratedSource && pS.type === "b")
-                    pV += this.AI_CONSECRATED_SOURCE_BONUS;
-                  if (pS.isReceivingConsecration)
-                    pV += this.AI_RECEIVING_CONSECRATION_BONUS;
-                  if (pS.isDominated) pV += this.AI_DOMINATED_PENALTY;
-                }
-                if (pUp) {
-                  if (sD.type === "q")
-                    pV +=
-                      pUp.dominanceAuraRange *
-                      this.AI_QUEEN_AURA_RANGE_BONUS_PER_UNIT;
-                  if (sD.type === "n")
-                    if (pUp.dashChance > 0.2)
-                      pV +=
-                        this.AI_KNIGHT_DASH_READY_BONUS *
-                        (pUp.dashChance / 0.1);
-                }
-                tE += sD.color === pC ? pV : -pV;
-              }
-            }
-          if (cB.in_checkmate()) tE += cB.turn() === pC ? -99999 : 99999;
-          else if (
-            cB.in_draw() ||
-            cB.in_stalemate() ||
-            cB.insufficient_material() ||
-            cB.in_threefold_repetition()
-          )
-            tE = 0;
-          else if (cB.in_check()) tE += cB.turn() === pC ? -50 : 50;
-          return tE;
-        },
-        minimax(cB, d, a, b, mP, oPC) {
-          /* ... (same as Iteration 11) ... */ if (d === 0 || cB.game_over())
-            return { score: this.evaluateBoard(cB, oPC) };
-          const pMs = cB.moves({ verbose: true });
-          if (pMs.length === 0) return { score: this.evaluateBoard(cB, oPC) };
-          pMs.sort((x, y) => {
-            let sX = 0,
-              sY = 0;
-            if (x.captured) sX += (this.pieceValues[x.captured] || 0) * 10;
-            if (y.captured) sY += (this.pieceValues[y.captured] || 0) * 10;
-            return sY - sX;
-          });
-          let bM = null;
-          if (mP) {
-            let mE = -Infinity;
-            for (const m of pMs) {
-              cB.move(m.san);
-              const e = this.minimax(cB, d - 1, a, b, false, oPC).score;
-              cB.undo();
-              if (e > mE) {
-                mE = e;
-                bM = m;
-              }
-              a = Math.max(a, e);
-              if (b <= a) break;
-            }
-            return { score: mE, move: bM };
-          } else {
-            let mE = Infinity;
-            for (const m of pMs) {
-              cB.move(m.san);
-              const e = this.minimax(cB, d - 1, a, b, true, oPC).score;
-              cB.undo();
-              if (e < mE) {
-                mE = e;
-                bM = m;
-              }
-              b = Math.min(b, e);
-              if (b <= a) break;
-            }
-            return { score: mE, move: bM };
-          }
-        },
-        getBestMoveAI(cC, d) {
-          /* ... (same as Iteration 11) ... */ const pC = cC.turn();
-          const sB = new Chess(cC.fen());
-          return this.minimax(sB, d, -Infinity, Infinity, true, pC);
-        },
-        createPawnModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.45, 0.2, 12),
-            mat
-          );
-          b.position.y = 0.1;
-          g.add(b);
-          const bd = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.25, 0.2, 0.5, 10),
-            mat
-          );
-          bd.position.y = b.position.y + 0.1 + 0.25;
-          g.add(bd);
-          const cl = new THREE.Mesh(
-            new THREE.TorusGeometry(0.22, 0.05, 8, 12),
-            mat
-          );
-          cl.position.y = bd.position.y + 0.25;
-          cl.rotation.x = Math.PI / 2;
-          g.add(cl);
-          const h = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 10), mat);
-          h.position.y = cl.position.y + 0.05 + 0.2;
-          g.add(h);
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        createRookModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.55, 0.6, 0.25, 16),
-            mat
-          );
-          b.position.y = 0.125;
-          g.add(b);
-          const bd = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.4, 1, 16),
-            mat
-          );
-          bd.position.y = b.position.y + 0.125 + 0.5;
-          g.add(bd);
-          const tB = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.5, 0.5, 0.2, 16),
-            mat
-          );
-          tB.position.y = bd.position.y + 0.5 + 0.1;
-          g.add(tB);
-          const cH = 0.25,
-            cW = 0.18,
-            cD = 0.18;
-          for (let i = 0; i < 6; i++) {
-            const ang = (i / 6) * Math.PI * 2;
-            const cr = new THREE.Mesh(new THREE.BoxGeometry(cW, cH, cD), mat);
-            cr.position.set(
-              Math.cos(ang) * (0.5 - cD / 2),
-              tB.position.y + 0.1 + cH / 2,
-              Math.sin(ang) * (0.5 - cD / 2)
-            );
-            cr.lookAt(new THREE.Vector3(0, cr.position.y, 0));
-            g.add(cr);
-          }
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        createKnightModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.5, 0.55, 0.2, 16),
-            mat
-          );
-          b.position.y = 0.1;
-          g.add(b);
-          const bd = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.25, 0.35, 0.8, 12),
-            mat
-          );
-          bd.position.y = b.position.y + 0.1 + 0.4;
-          bd.rotation.z = -Math.PI / 12;
-          g.add(bd);
-          const nk = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.2, 0.15, 0.3, 10),
-            mat
-          );
-          nk.position.set(0.15, bd.position.y + 0.4, 0);
-          nk.rotation.z = Math.PI / 6;
-          g.add(nk);
-          const h = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.25), mat);
-          h.position.set(nk.position.x + 0.2, nk.position.y + 0.1, 0);
-          h.rotation.z = Math.PI / 5;
-          g.add(h);
-          const sn = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.1, 0.15, 0.3, 8),
-            mat
-          );
-          sn.position.set(h.position.x + 0.2, h.position.y - 0.05, 0);
-          sn.rotation.z = Math.PI / 4;
-          g.add(sn);
-          const eG = new THREE.ConeGeometry(0.08, 0.25, 6);
-          const e1 = new THREE.Mesh(eG, mat);
-          e1.position.set(h.position.x - 0.15, h.position.y + 0.2, 0.1);
-          e1.rotation.set(0, 0, Math.PI / 2.5);
-          g.add(e1);
-          const e2 = new THREE.Mesh(eG, mat);
-          e2.position.set(h.position.x - 0.15, h.position.y + 0.2, -0.1);
-          e2.rotation.set(0, 0, Math.PI / 2.5);
-          g.add(e2);
-          g.rotation.y = -Math.PI / 2.5;
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        createBishopModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.45, 0.5, 0.2, 16),
-            mat
-          );
-          b.position.y = 0.1;
-          g.add(b);
-          const bd = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.2, 0.35, 1.1, 12),
-            mat
-          );
-          bd.position.y = b.position.y + 0.1 + 0.55;
-          g.add(bd);
-          const h = new THREE.Mesh(
-            new THREE.SphereGeometry(
-              0.3,
-              12,
-              10,
-              0,
-              Math.PI * 2,
-              0,
-              Math.PI * 0.75
-            ),
-            mat
-          );
-          h.position.y = bd.position.y + 0.55 + 0.15;
-          h.rotation.x = -Math.PI / 12;
-          g.add(h);
-          const n = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.15), mat);
-          n.position.set(0, h.position.y + 0.25, 0);
-          g.add(n);
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        createQueenModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.55, 0.6, 0.25, 16),
-            mat
-          );
-          b.position.y = 0.125;
-          g.add(b);
-          const lB = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.3, 0.45, 0.9, 16),
-            mat
-          );
-          lB.position.y = b.position.y + 0.125 + 0.45;
-          g.add(lB);
-          const uB = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.25, 0.6, 16),
-            mat
-          );
-          uB.position.y = lB.position.y + 0.45 + 0.3;
-          g.add(uB);
-          const cB = new THREE.Mesh(
-            new THREE.TorusGeometry(0.3, 0.06, 8, 24),
-            mat
-          );
-          cB.position.y = uB.position.y + 0.3;
-          cB.rotation.x = Math.PI / 2;
-          g.add(cB);
-          const jG = new THREE.ConeGeometry(0.08, 0.35, 6);
-          for (let i = 0; i < 7; i++) {
-            const ang = (i / 7) * Math.PI * 2;
-            const j = new THREE.Mesh(jG, mat);
-            j.position.set(
-              Math.cos(ang) * 0.3,
-              cB.position.y + 0.12,
-              Math.sin(ang) * 0.3
-            );
-            g.add(j);
-          }
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        createKingModel(mat) {
-          /* ... (same as Iteration 11) ... */ const g = new THREE.Group();
-          const b = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.6, 0.65, 0.3, 16),
-            mat
-          );
-          b.position.y = 0.15;
-          g.add(b);
-          const bd = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.4, 0.5, 1.2, 16),
-            mat
-          );
-          bd.position.y = b.position.y + 0.15 + 0.6;
-          g.add(bd);
-          const h = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), mat);
-          h.position.y = bd.position.y + 0.6 + 0.3;
-          g.add(h);
-          const cV = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.45, 0.1), mat);
-          cV.position.y = h.position.y + 0.35 + 0.1;
-          g.add(cV);
-          const cH = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.1), mat);
-          cH.position.y = h.position.y + 0.35 + 0.2;
-          g.add(cH);
-          g.scale.set(
-            this.basePieceScale,
-            this.basePieceScale,
-            this.basePieceScale
-          );
-          return g;
-        },
-        setupThreeJS() {
-          /* ... (same as Iteration 11) ... */ const container =
-            document.getElementById("threejs-container");
-          if (!container) {
-            this.log("ERROR: 3js container missing.");
-            return;
-          }
-          this.threeScene = new THREE.Scene();
-          const skyGeo = new THREE.SphereGeometry(500, 32, 16);
-          const skyMat = new THREE.ShaderMaterial({
-            uniforms: {
-              topColor: { value: new THREE.Color(0x3a4f6f) },
-              bottomColor: { value: new THREE.Color(0x1a2533) },
-              offset: { value: 33 },
-              exponent: { value: 0.6 },
-            },
-            vertexShader: `varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4( position, 1.0 ); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`,
-            fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize( vWorldPosition + offset ).y; gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 ); }`,
-            side: THREE.BackSide,
-          });
-          this.threeSkybox = new THREE.Mesh(skyGeo, skyMat);
-          this.threeScene.add(this.threeSkybox);
-          this.threeCamera = new THREE.PerspectiveCamera(
-            50,
-            container.clientWidth / Math.max(1, container.clientHeight),
-            0.1,
-            1000
-          );
-          this.threeCamera.position.set(0, 9.5, 10.5);
-          this.threeCamera.lookAt(0, 0.5, 0);
-          this.threeRenderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: false,
-          });
-          this.threeRenderer.setSize(
-            container.clientWidth,
-            container.clientHeight
-          );
-          this.threeRenderer.shadowMap.enabled = true;
-          this.threeRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          container.innerHTML = "";
-          container.appendChild(this.threeRenderer.domElement);
-          const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
-          this.threeScene.add(ambientLight);
-          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
-          directionalLight.position.set(10, 15, 8);
-          directionalLight.castShadow = true;
-          directionalLight.shadow.mapSize.width = 2048;
-          directionalLight.shadow.mapSize.height = 2048;
-          directionalLight.shadow.camera.near = 0.5;
-          directionalLight.shadow.camera.far = 50;
-          directionalLight.shadow.bias = -0.0005;
-          this.threeScene.add(directionalLight);
-          this.threeBoardGroup = new THREE.Group();
-          this.threeScene.add(this.threeBoardGroup);
-          const squareGeo = new THREE.PlaneGeometry(
-            this.squareSize,
-            this.squareSize
-          );
-          for (let r = 0; r < 8; r++) {
-            for (let f = 0; f < 8; f++) {
-              const iL = (r + f) % 2 === 0;
-              const sM = new THREE.MeshStandardMaterial({
-                color: iL ? 0xd1d1d1 : 0x5f5f6f,
-                metalness: 0.1,
-                roughness: 0.8,
-              });
-              const sMs = new THREE.Mesh(squareGeo, sM);
-              sMs.rotation.x = -Math.PI / 2;
-              sMs.position.set(
-                f * this.squareSize - this.squareSize * 3.5,
-                0,
-                r * this.squareSize - this.squareSize * 3.5
-              );
-              sMs.receiveShadow = true;
-              this.threeBoardGroup.add(sMs);
-            }
-          }
-          this.updateThreeJSBoardFromFEN(new Chess().fen(), true);
-          const animate = (timestamp) => {
-            requestAnimationFrame(animate);
-            const now = timestamp || performance.now();
-            this.updateVFX(now);
-            this.animationJobs = this.animationJobs.filter((job) => {
-              const elapsedTime = now - job.startTime;
-              const progress = Math.min(elapsedTime / job.duration, 1);
-              job.group.position.lerpVectors(
-                job.startPos,
-                job.targetPos,
-                progress
-              );
-              job.group.position.y =
-                job.startPos.y + Math.sin(progress * Math.PI) * 0.5;
-              if (job.capturedGroup) {
-                job.capturedGroup.traverse((child) => {
-                  if (child.isMesh && child.material) {
-                    if (!child.material.clonedForFade) {
-                      child.material = child.material.clone();
-                      child.material.transparent = true;
-                      child.material.clonedForFade = true;
+        updateGameSpeedButtons() { /* ... (same as Iteration 12) ... */ document.getElementById('speedBtn1x').classList.toggle('selected-speed', this.gameSpeedMultiplier === 1); document.getElementById('speedBtn2x').classList.toggle('selected-speed', this.gameSpeedMultiplier === 2); },
+        evolvePiece(pieceType, attribute, value = null) { /* ... (same as Iteration 12) ... */ const pieceConfig = this.pieces[pieceType]; if (!pieceConfig) { this.log(`ERROR: Unknown piece type: ${pieceType}`); this.playSound('error'); return; } const costFunction = pieceConfig.evolutionCosts[attribute]; if (!costFunction) { this.log(`ERROR: Unknown attribute ${attribute} for ${pieceType}`); this.playSound('error'); return; } let currentVal = pieceConfig[attribute]; if (attribute === "setPromotionPreference") currentVal = undefined; const cost = Math.ceil(costFunction(currentVal)); const currencyMap = { marchSpeed: "temporalEssence", resilience: "mnemonicDust", setPromotionPreference: "mnemonicDust", dashChance: "mnemonicDust", dashCooldown: "temporalEssence", snipeRange: "mnemonicDust", consecrationTurns: "temporalEssence", entrenchThreshold: "temporalEssence", entrenchPower: "mnemonicDust", dominanceAuraRange: "mnemonicDust", manaRegenBonus: "temporalEssence", royalDecreeUses: "mnemonicDust", lastStandThreshold: "temporalEssence", }; const currency = currencyMap[attribute]; if (!currency) { this.log(`ERROR: No currency for attribute ${attribute}`); this.playSound('error'); return; } if (this.resources[currency] >= cost) { let success = false; switch (`${pieceType}-${attribute}`) { case 'pawn-marchSpeed': pieceConfig.marchSpeed++; success = true; break; case 'pawn-resilience': pieceConfig.resilience++; success = true; break; case 'pawn-setPromotionPreference': if (["q", "n", "r", "b"].includes(value)) { pieceConfig.promotionPreference = value; success = true; } else { this.log(`Invalid promotion preference: ${value}`); } break; case 'knight-dashChance': if (pieceConfig.dashChance < 0.8) { pieceConfig.dashChance = parseFloat((pieceConfig.dashChance + 0.05).toFixed(2)); success = true; } else { this.log("Max Dash Chance reached.");} break; case 'knight-dashCooldown': if (pieceConfig.dashCooldown > 1) { pieceConfig.dashCooldown--; success = true; } else { this.log("Min Dash Cooldown reached.");} break; case 'bishop-snipeRange': if (pieceConfig.snipeRange < 5) { pieceConfig.snipeRange++; success = true; } else { this.log("Max Snipe Range reached.");} break; case 'bishop-consecrationTurns': if (pieceConfig.consecrationTurns > 1) { pieceConfig.consecrationTurns--; success = true; } else { this.log("Min Consecration Turns reached.");} break; case 'rook-entrenchThreshold': if (pieceConfig.entrenchThreshold > 1) { pieceConfig.entrenchThreshold--; success = true; } else { this.log("Min Entrench Threshold reached.");} break; case 'rook-entrenchPower': if (pieceConfig.entrenchPower < 5) { pieceConfig.entrenchPower++; success = true; } else { this.log("Max Entrench Power reached.");} break; case 'queen-dominanceAuraRange': if (pieceConfig.dominanceAuraRange < 3) { pieceConfig.dominanceAuraRange++; success = true; } else { this.log("Max Dominance Aura Range reached.");} break; case 'queen-manaRegenBonus': if (pieceConfig.manaRegenBonus < 1.0) { pieceConfig.manaRegenBonus = parseFloat((pieceConfig.manaRegenBonus + 0.1).toFixed(1)); success = true; } else { this.log("Max Mana Regen Bonus reached.");} break; case 'king-royalDecreeUses': if (pieceConfig.royalDecreeUses < 3) { pieceConfig.royalDecreeUses++; success = true; } else { this.log("Max Royal Decree Uses reached.");} break; case 'king-lastStandThreshold': if (pieceConfig.lastStandThreshold < 0.5) { pieceConfig.lastStandThreshold = parseFloat((pieceConfig.lastStandThreshold + 0.05).toFixed(2)); success = true; } else { this.log("Max Last Stand Threshold reached.");} break; default: this.log(`Unhandled evolution: ${pieceType}-${attribute}`); } if (success) { this.resources[currency] -= cost; this.log(`${pieceType}'s ${attribute} evolved.`); this.playSound('evolve'); let displayId = ''; if (currency === 'temporalEssence') displayId = 'temporalEssenceDisplay'; else if (currency === 'mnemonicDust') displayId = 'mnemonicDustDisplay'; if (displayId) this.highlightResourceUpdate(displayId, true); } else { this.playSound('error'); } } else { this.log(`Insufficient ${currency.replace(/([A-Z])/g, ' $1').toUpperCase()}. Need ${cost}. You have ${Math.floor(this.resources[currency])}.`); this.playSound('error'); } this.updateUI(); },
+        initializeEncounterPieceStates() { /* ... (same as Iteration 12) ... */ this.encounterPieceStates = {}; if (!this.chessInstance) return; const board = this.chessInstance.board(); for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const d = board[r][f]; if (d) { const a = `${String.fromCharCode(97 + f)}${8 - r}`; this.encounterPieceStates[a] = { type: d.type, color: d.color, turnsStationary: 0, isEntrenched: false, isConsecratedSource: false, isReceivingConsecration: false, isDominated: false, }; } } this.applyAurasAndStaticEffects(); },
+        updateEncounterPieceStates(move) { /* ... (same as Iteration 12) ... */ const pSS = this.encounterPieceStates[move.from] ? { ...this.encounterPieceStates[move.from] } : null; if (move.from && this.encounterPieceStates[move.from]) delete this.encounterPieceStates[move.from]; const mPD = this.chessInstance.get(move.to); if (mPD) { this.encounterPieceStates[move.to] = { type: mPD.type, color: mPD.color, turnsStationary: 0, isEntrenched: false, isConsecratedSource: false, isReceivingConsecration: false, isDominated: false, }; } const pWM = this.chessInstance.turn() === 'w' ? 'b' : 'w'; for (const sq in this.encounterPieceStates) { const pS = this.encounterPieceStates[sq]; if (pS.color === pWM && sq !== move.to) { pS.turnsStationary++; if (pS.type === 'r' && this.pieces.rook && !pS.isEntrenched && pS.turnsStationary >= this.pieces.rook.entrenchThreshold) { pS.isEntrenched = true; this.log(`Rook@${sq} ENTRENCHED!`); this.playSound('rook_entrench'); this.triggerRookEntrenchVFX(sq); } if (pS.type === 'b' && this.pieces.bishop && !pS.isConsecratedSource && pS.turnsStationary >= this.pieces.bishop.consecrationTurns) { pS.isConsecratedSource = true; this.log(`Bishop@${sq} CONSECRATING!`); this.playSound('bishop_consecrate'); } } } this.applyAurasAndStaticEffects(); },
+        applyAurasAndStaticEffects() { /* ... (same as Iteration 12) ... */ if (!this.isEncounterActive || !this.chessInstance) return; for (const sq in this.encounterPieceStates) { this.encounterPieceStates[sq].isReceivingConsecration = false; this.encounterPieceStates[sq].isDominated = false; } const bS = Object.keys(this.encounterPieceStates); for (const sSq of bS) { const sPS = this.encounterPieceStates[sSq]; if (!sPS) continue; if (sPS.type === 'b' && sPS.isConsecratedSource && this.pieces.bishop) { const [f, rk] = [sSq.charCodeAt(0) - 97, parseInt(sSq[1]) - 1]; const cT = [[f - 1, rk - 1], [f + 1, rk - 1], [f - 1, rk + 1], [f + 1, rk + 1]]; cT.forEach(([tF, tR]) => { if (tF >= 0 && tF < 8 && tR >= 0 && tR < 8) { const tSA = `${String.fromCharCode(97 + tF)}${tR + 1}`; const tPS = this.encounterPieceStates[tSA]; if (tPS && tPS.color === sPS.color) tPS.isReceivingConsecration = true; } }); } if (sPS.type === 'q' && this.pieces.queen) { const [qF, qR] = [sSq.charCodeAt(0) - 97, parseInt(sSq[1]) - 1]; const rng = this.pieces.queen.dominanceAuraRange; for (const tSq of bS) { if (sSq === tSq) continue; const tPS = this.encounterPieceStates[tSq]; if (tPS && tPS.color !== sPS.color) { const [tF, tR] = [tSq.charCodeAt(0) - 97, parseInt(tSq[1]) - 1]; const dst = Math.max(Math.abs(qF - tF), Math.abs(qR - tR)); if (dst <= rng) { tPS.isDominated = true; } } } } } },
+  startEncounter() { /* ... (same as Iteration 12) ... */ this.playSound('encounter_start'); if (this.isEncounterActive) return; this.isEncounterActive = true; this.knightGlobalDashCooldownTurnsRemaining = 0; document.getElementById("startEncounterBtn").disabled = true; document.getElementById("endEncounterBtn").style.display = "inline-block"; this.currentEncounter = { name: "Temporal Nexus", description: "Temporal disturbances intensify! Control the flow of time!", opponentAI: "minimax", }; document.getElementById("narrative-display").innerHTML = `<p><em>${this.currentEncounter.name}</em></p><p>${this.currentEncounter.description}</p><p>The Chronos Anomaly is unstable... Engage!</p>`; this.log(`New Encounter: ${this.currentEncounter.name}`); this.chessInstance = new Chess(); this.initializeEncounterPieceStates(); this.updateChessUI(); this.updateThreeJSBoardFromFEN(this.chessInstance.fen(), true); const intervalTime = (this.autobattleBaseIntervalTime + this.ANIMATION_DURATION_MS) / this.gameSpeedMultiplier; this.autobattleInterval = setInterval(async () => { if (!this.isEncounterActive || (this.chessInstance && this.chessInstance.game_over())) { this.endEncounter(this.chessInstance && this.chessInstance.game_over() && !this.chessInstance.in_draw()); return; } await this.makeAutobattleMove(); }, intervalTime); },
+        async makeAutobattleMove() { /* ... (same as Iteration 12) ... */ if (!this.chessInstance || this.chessInstance.game_over()) return; if (this.knightGlobalDashCooldownTurnsRemaining > 0) this.knightGlobalDashCooldownTurnsRemaining--; this.updateUICooldownDisplay(); const aMO = this.getBestMoveAI(this.chessInstance, this.aiSearchDepth); if (!aMO || !aMO.move) { this.log("AI failed. Random fallback."); const rMs = this.chessInstance.moves({ verbose: true }); if (rMs.length > 0) aMO.move = rMs[Math.floor(Math.random() * rMs.length)]; else { this.endEncounter(false); return; } } const mv = aMO.move; document.getElementById("aiEvaluationScore").textContent = aMO.score.toFixed(2); const pT = this.chessInstance.get(mv.from).type; const pC = this.chessInstance.get(mv.from).color; let promoT = undefined; if (mv.flags.includes("p") && pT === "p" && this.pieces.pawn) promoT = this.pieces.pawn.promotionPreference; const mPData = this.threePieces[mv.from]; let cPData = null; if (mv.captured) cPData = this.threePieces[mv.to]; const cjsMv = this.chessInstance.move(promoT ? { from: mv.from, to: mv.to, promotion: promoT } : mv.san); if (cjsMv) { this.log(`Auto (${pC.toUpperCase()}): ${pT.toUpperCase()} ${cjsMv.san} (Eval: ${aMO.score.toFixed(2)})`); this.playSound(cjsMv.captured ? 'capture' : 'move'); if (mPData && mPData.group) { const tP3D = this.getThreeJSPosition(mv.to); this.animationJobs.push({ group: mPData.group, startPos: mPData.group.position.clone(), targetPos: tP3D, startTime: performance.now(), duration: this.ANIMATION_DURATION_MS, fromAlg: mv.from, toAlg: mv.to, pieceData: mPData, capturedGroup: cPData ? cPData.group : null, capturedAlg: cPData ? mv.to : null }); mPData.isAnimating = true; if (cPData) cPData.isAnimating = true; } this.updateEncounterPieceStates(cjsMv); this.updateChessUI(); this.updateThreeJSBoardFromFEN(this.chessInstance.fen()); this.flashPiece(mv.to); if (pT === 'n' && this.pieces.knight && !this.chessInstance.game_over()) { if (Math.random() < this.pieces.knight.dashChance && this.knightGlobalDashCooldownTurnsRemaining === 0) { this.log(`Knight@${mv.to} attempts Dash!`); await new Promise(r => setTimeout(r, this.ANIMATION_DURATION_MS / 2)); await this.performKnightDash(mv.to, pC); } } } else { this.log(`ERROR: AI move ${mv.san} failed.`); this.endEncounter(false); } },
+        async performKnightDash(fromSq, kColor) { /* ... (same as Iteration 12) ... */ const kP = this.chessInstance.get(fromSq); if (!kP || kP.type !== 'n' || kP.color !== kColor) { this.log("Dash cancelled."); return; } const dMs = this.chessInstance.moves({ square: fromSq, verbose: true }); if (dMs.length > 0) { const dM = dMs[Math.floor(Math.random() * dMs.length)]; this.log(`Knight DASH! ${fromSq}->${dM.to}`); this.playSound('knight_dash'); this.triggerKnightDashVFX(fromSq, dM.to); const mPData = this.threePieces[fromSq]; let cPData = null; if (dM.captured) cPData = this.threePieces[dM.to]; const cjsDM = this.chessInstance.move(dM.san); if (cjsDM) { if (mPData && mPData.group) { const tP3D = this.getThreeJSPosition(dM.to); this.animationJobs.push({ group: mPData.group, startPos: mPData.group.position.clone(), targetPos: tP3D, startTime: performance.now(), duration: this.ANIMATION_DURATION_MS * 0.6, fromAlg: fromSq, toAlg: dM.to, pieceData: mPData, capturedGroup: cPData ? cPData.group : null, capturedAlg: cPData ? dM.to : null }); mPData.isAnimating = true; if (cPData) cPData.isAnimating = true; } this.knightGlobalDashCooldownTurnsRemaining = this.pieces.knight.dashCooldown; this.updateUICooldownDisplay(); this.log(`Dash Mv: ${cjsDM.san}`); this.updateEncounterPieceStates(cjsDM); } else { this.log(`ERR: Dash ${dM.san} fail.`); return; } this.updateChessUI(); this.updateThreeJSBoardFromFEN(this.chessInstance.fen()); this.flashPiece(dM.to, true); } else { this.log(`Knight@${fromSq} no dash moves.`); } },
+        triggerKnightDashVFX(fromAlg, toAlg) { /* ... (same as Iteration 12) ... */ const sP = this.getThreeJSPosition(fromAlg); const eP = this.getThreeJSPosition(toAlg); const nP = 10; const tD = this.ANIMATION_DURATION_MS * .5; for (let i = 0; i < nP; i++) { const pD = (i / nP) * tD * .3; setTimeout(() => { const p = this.getVFXObject('dash_trail'); const sProg = (i + Math.random()) / nP; p.position.lerpVectors(sP, eP, sProg); p.position.y += .2; this.threeBoardGroup.add(p); const life = tD * (.5 + Math.random() * .5); this.vfxObjects.push({ mesh: p, startTime: performance.now() + pD, duration: life, type: 'dash_trail' }); }, pD); } },
+        triggerRookEntrenchVFX(alg) { /* ... (same as Iteration 12) ... */ const pE = this.threePieces[alg]; if (pE && pE.shieldMesh) { const s = pE.shieldMesh; const oS = s.scale.clone(); const pD = 300; let pSt = performance.now(); function aP(ts) { const el = ts - pSt; const prog = Math.min(el / pD, 1); const sF = 1 + .3 * Math.sin(prog * Math.PI); s.scale.set(oS.x * sF, oS.y * sF, oS.z * sF); s.material.opacity = .3 + .4 * Math.sin(prog * Math.PI); if (prog < 1) requestAnimationFrame(aP.bind(this)); else { s.scale.copy(oS); s.material.opacity = this.pieceMaterials.shield.opacity; } } requestAnimationFrame(aP.bind(this)); } },
+        getVFXObject(type) { /* ... (same as Iteration 12) ... */ if (type === 'dash_trail') { const particleGeom = new THREE.SphereGeometry(0.05 + Math.random() * 0.05, 6, 4); return new THREE.Mesh(particleGeom, this.knightDashParticleMaterial.clone()); } else if (type === 'dominated_effect') { const pG = new THREE.BufferGeometry(); const pos = []; for (let i = 0; i < 15; i++) pos.push((Math.random()-.5)*.8*this.basePieceScale, (Math.random()*.6+.1)*this.basePieceScale, (Math.random()-.5)*.8*this.basePieceScale); pG.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return new THREE.Points(pG, this.dominanceEffectMaterial.clone()); } else if (type === 'consecration_receiver') { const pG = new THREE.BufferGeometry(); const pos = []; for (let i = 0; i < 25; i++) pos.push((Math.random()-.5)*1.2*this.basePieceScale, (Math.random()*.4+.05)*this.basePieceScale, (Math.random()-.5)*1.2*this.basePieceScale); pG.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return new THREE.Points(pG, this.consecrationReceiverMaterial.clone()); } return null; },
+        releaseVFXObject(vfx) { /* ... (same as Iteration 12) ... */ if (vfx.mesh.geometry) vfx.mesh.geometry.dispose(); if (vfx.mesh.material) vfx.mesh.material.dispose(); },
+        updateVFX(now) { /* ... (same as Iteration 12) ... */ this.vfxObjects = this.vfxObjects.filter(vfx => { const el = now - vfx.startTime; const prog = Math.min(el / vfx.duration, 1); if (vfx.type === 'dash_trail') { vfx.mesh.material.opacity = 1.0 - prog; vfx.mesh.scale.setScalar(1.0 - prog * .5); } else if (vfx.type === 'dominated_effect' || vfx.type === 'consecration_receiver') { vfx.mesh.material.opacity = Math.sin(prog * Math.PI) * 0.6; } if (prog >= 1) { this.threeBoardGroup.remove(vfx.mesh); this.releaseVFXObject(vfx); return false; } return true; }); },
+        flashPiece(alg, isDash = false) { /* ... (same as Iteration 12) ... */ const pE = this.threePieces[alg]; if (pE && pE.group && !pE.isAnimating) { const pG = pE.group; const oMs = []; pG.traverse((c) => { if (c.isMesh) { oMs.push({ obj: c, mat: c.material }); c.material = this.abilityFlashMaterial.clone(); } }); if (isDash) pG.scale.set(this.basePieceScale * 1.1, this.basePieceScale * 1.2, this.basePieceScale * 1.1); setTimeout(() => { if (pG) { oMs.forEach(i => {if(i.obj && i.obj.material) i.obj.material = i.mat;}); if (isDash) pG.scale.set(this.basePieceScale, this.basePieceScale, this.basePieceScale); if (this.encounterPieceStates[alg]) this.updateThreeJSPieceAppearance(alg, this.encounterPieceStates[alg]); } }, 500); } },
+        endEncounter(pW, f = false) { /* ... (ensure VFX cleared) ... */ if (!this.isEncounterActive) return; this.playSound(pW ? 'encounter_win' : (f ? 'error' : 'encounter_lose')); clearInterval(this.autobattleInterval); this.autobattleInterval = null; this.encounterPieceStates = {}; this.animationJobs = []; this.vfxObjects.forEach(vfx => { this.threeBoardGroup.remove(vfx.mesh); this.releaseVFXObject(vfx); }); this.vfxObjects = []; document.getElementById("aiEvaluationScore").textContent = "0"; let oM; if (f) { oM = "Forfeited. 1 MD."; this.resources.mnemonicDust += 1; } else if (pW) { const asE = Math.random() < 0.25 ? (Math.random() < 0.5 ? 1 : 2) : 0; oM = `Victory! 15 MD${asE > 0 ? ` & ${asE} AS!` : "."}`; this.resources.mnemonicDust += 15; this.resources.aetherShards += asE; if (asE > 0) this.highlightResourceUpdate('aetherShardsDisplay', true); this.highlightResourceUpdate('mnemonicDustDisplay', true); } else { if (this.chessInstance && (this.chessInstance.in_stalemate() || this.chessInstance.in_draw() || this.chessInstance.insufficient_material() || this.chessInstance.in_threefold_repetition())) { oM = "Draw. 5 MD."; this.resources.mnemonicDust += 5; } else { oM = "Defeat. 3 MD."; this.resources.mnemonicDust += 3; } this.highlightResourceUpdate('mnemonicDustDisplay', true);} this.log(oM); document.getElementById("narrative-display").innerHTML = `<p><em>${oM}</em></p><p>The timeline stabilizes... for now.</p>`; this.isEncounterActive = false; this.currentEncounter = null; document.getElementById("startEncounterBtn").disabled = false; document.getElementById("endEncounterBtn").style.display = "none"; this.updateUI(); },
+        updateChessUI() { /* ... (same as Iteration 12) ... */ const fe = document.getElementById("board-fen"), ae = document.getElementById("board-ascii"), se = document.getElementById("game-status"); if (this.chessInstance) { fe.textContent = this.chessInstance.fen(); ae.textContent = this.chessInstance.ascii(); let s = ""; const tp = this.chessInstance.turn() === "w" ? "White" : "Black"; if (this.chessInstance.in_checkmate()) { s = `Checkmate! ${tp === "White" ? "Black" : "White"} wins.`; } else if (this.chessInstance.in_draw()) { s = "Draw!"; } else if (this.chessInstance.in_stalemate()) { s = "Stalemate!"; } else if (this.chessInstance.in_threefold_repetition()) { s = "Draw by 3-Rep!"; } else if (this.chessInstance.insufficient_material()) { s = "Draw by Insuff. Mat.!"; } else { s = `${tp}'s turn.`; if (this.chessInstance.in_check()) s += " (Check!)"; } se.textContent = s; } else { fe.textContent = "No game."; ae.textContent = "---"; se.textContent = "Not started."; } },
+        updateUICooldownDisplay() { /* ... (same as Iteration 12) ... */ document.getElementById("knightDashCooldownRemainingDisplay").textContent = this.knightGlobalDashCooldownTurnsRemaining; },
+        AI_ENTRENCH_BONUS_PER_POWER: 25, AI_CONSECRATED_SOURCE_BONUS: 15, AI_RECEIVING_CONSECRATION_BONUS: 10, AI_DOMINATED_PENALTY: -40, AI_QUEEN_AURA_RANGE_BONUS_PER_UNIT: 5, AI_KNIGHT_DASH_READY_BONUS: 8,
+        pieceValues: { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20000 }, pst: { /* ... (same as Iteration 12) ... */ p: [[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]], n: [[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]], b: [[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]], r: [[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]], q: [[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]], k: [[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]] },
+        evaluateBoard(cB, pC) { /* ... (same as Iteration 12) ... */ let tE = 0; const b = cB.board(); for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const sD = b[r][f]; if (sD) { let pV = this.pieceValues[sD.type] || 0; const pTbl = this.pst[sD.type]; if (pTbl) pV += (sD.color === 'w' ? pTbl[r][f] : pTbl[7-r][f]); const alg = `${String.fromCharCode(97 + f)}${8 - r}`; const pS = this.encounterPieceStates[alg]; const pUp = this.pieces[sD.type]; if (pS) { if (pS.type === 'r' && pS.isEntrenched && pUp) pV += pUp.entrenchPower * this.AI_ENTRENCH_BONUS_PER_POWER; if (pS.isConsecratedSource && pS.type === 'b') pV += this.AI_CONSECRATED_SOURCE_BONUS; if (pS.isReceivingConsecration) pV += this.AI_RECEIVING_CONSECRATION_BONUS; if (pS.isDominated) pV += this.AI_DOMINATED_PENALTY; } if (pUp) { if (sD.type === 'q') pV += pUp.dominanceAuraRange * this.AI_QUEEN_AURA_RANGE_BONUS_PER_UNIT; if (sD.type === 'n') if (pUp.dashChance > 0.2) pV += this.AI_KNIGHT_DASH_READY_BONUS * (pUp.dashChance / 0.1); } tE += (sD.color === pC ? pV : -pV); } } if (cB.in_checkmate()) tE += (cB.turn() === pC ? -99999 : 99999); else if (cB.in_draw() || cB.in_stalemate() || cB.insufficient_material() || cB.in_threefold_repetition()) tE = 0; else if (cB.in_check()) tE += (cB.turn() === pC ? -50 : 50); return tE; },
+        minimax(cB, d, a, b, mP, oPC) { /* ... (same as Iteration 12) ... */ if (d === 0 || cB.game_over()) return { score: this.evaluateBoard(cB, oPC) }; const pMs = cB.moves({ verbose: true }); if (pMs.length === 0) return { score: this.evaluateBoard(cB, oPC) }; pMs.sort((x, y) => { let sX = 0, sY = 0; if (x.captured) sX += (this.pieceValues[x.captured] || 0) * 10; if (y.captured) sY += (this.pieceValues[y.captured] || 0) * 10; return sY - sX; }); let bM = null; if (mP) { let mE = -Infinity; for (const m of pMs) { cB.move(m.san); const e = this.minimax(cB, d - 1, a, b, false, oPC).score; cB.undo(); if (e > mE) { mE = e; bM = m; } a = Math.max(a, e); if (b <= a) break; } return { score: mE, move: bM }; } else { let mE = Infinity; for (const m of pMs) { cB.move(m.san); const e = this.minimax(cB, d - 1, a, b, true, oPC).score; cB.undo(); if (e < mE) { mE = e; bM = m; } b = Math.min(b, e); if (b <= a) break; } return { score: mE, move: bM }; } },
+        getBestMoveAI(cC, d) { /* ... (same as Iteration 12) ... */ const pC = cC.turn(); const sB = new Chess(cC.fen()); return this.minimax(sB, d, -Infinity, Infinity, true, pC); },
+        createPawnModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.4,.45,.2,12),mat); b.position.y=.1; g.add(b); const bd=new THREE.Mesh(new THREE.CylinderGeometry(.25,.2,.5,10),mat); bd.position.y=b.position.y+.1+.25; g.add(bd); const cl=new THREE.Mesh(new THREE.TorusGeometry(.22,.05,8,12),mat); cl.position.y=bd.position.y+.25; cl.rotation.x=Math.PI/2; g.add(cl); const h=new THREE.Mesh(new THREE.SphereGeometry(.25,12,10),mat); h.position.y=cl.position.y+.05+.2; g.add(h); g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        createRookModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.55,.6,.25,16),mat); b.position.y=.125; g.add(b); const bd=new THREE.Mesh(new THREE.CylinderGeometry(.4,.4,1,16),mat); bd.position.y=b.position.y+.125+.5; g.add(bd); const tB=new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.2,16),mat); tB.position.y=bd.position.y+.5+.1; g.add(tB); const cH=.25,cW=.18,cD=.18; for(let i=0;i<6;i++){ const ang=(i/6)*Math.PI*2; const cr=new THREE.Mesh(new THREE.BoxGeometry(cW,cH,cD),mat); cr.position.set(Math.cos(ang)*(.5-cD/2),tB.position.y+.1+cH/2,Math.sin(ang)*(.5-cD/2)); cr.lookAt(new THREE.Vector3(0,cr.position.y,0)); g.add(cr); } g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        createKnightModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.5,.55,.2,16),mat); b.position.y=.1; g.add(b); const bd=new THREE.Mesh(new THREE.CylinderGeometry(.25,.35,.8,12),mat); bd.position.y=b.position.y+.1+.4; bd.rotation.z=-Math.PI/12; g.add(bd); const nk=new THREE.Mesh(new THREE.CylinderGeometry(.2,.15,.3,10),mat); nk.position.set(.15,bd.position.y+.4,0); nk.rotation.z=Math.PI/6; g.add(nk); const h=new THREE.Mesh(new THREE.BoxGeometry(.5,.35,.25),mat); h.position.set(nk.position.x+.2,nk.position.y+.1,0); h.rotation.z=Math.PI/5; g.add(h); const sn=new THREE.Mesh(new THREE.CylinderGeometry(.1,.15,.3,8),mat); sn.position.set(h.position.x+.2,h.position.y-.05,0); sn.rotation.z=Math.PI/4; g.add(sn); const eG=new THREE.ConeGeometry(.08,.25,6); const e1=new THREE.Mesh(eG,mat); e1.position.set(h.position.x-.15,h.position.y+.2,.1); e1.rotation.set(0,0,Math.PI/2.5); g.add(e1); const e2=new THREE.Mesh(eG,mat); e2.position.set(h.position.x-.15,h.position.y+.2,-.1); e2.rotation.set(0,0,Math.PI/2.5); g.add(e2); g.rotation.y=-Math.PI/2.5; g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        createBishopModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.45,.5,.2,16),mat); b.position.y=.1; g.add(b); const bd=new THREE.Mesh(new THREE.CylinderGeometry(.2,.35,1.1,12),mat); bd.position.y=b.position.y+.1+.55; g.add(bd); const h=new THREE.Mesh(new THREE.SphereGeometry(.3,12,10,0,Math.PI*2,0,Math.PI*.75),mat); h.position.y=bd.position.y+.55+.15; h.rotation.x=-Math.PI/12; g.add(h); const n=new THREE.Mesh(new THREE.BoxGeometry(.05,.2,.15),mat); n.position.set(0,h.position.y+.25,0); g.add(n); g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        createQueenModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.55,.6,.25,16),mat); b.position.y=.125; g.add(b); const lB=new THREE.Mesh(new THREE.CylinderGeometry(.3,.45,.9,16),mat); lB.position.y=b.position.y+.125+.45; g.add(lB); const uB=new THREE.Mesh(new THREE.CylinderGeometry(.4,.25,.6,16),mat); uB.position.y=lB.position.y+.45+.3; g.add(uB); const cB=new THREE.Mesh(new THREE.TorusGeometry(.3,.06,8,24),mat); cB.position.y=uB.position.y+.3; cB.rotation.x=Math.PI/2; g.add(cB); const jG=new THREE.ConeGeometry(.08,.35,6); for(let i=0;i<7;i++){ const ang=(i/7)*Math.PI*2; const j=new THREE.Mesh(jG,mat); j.position.set(Math.cos(ang)*.3,cB.position.y+.12,Math.sin(ang)*.3); g.add(j); } g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        createKingModel(mat) { /* ... (same as Iteration 12) ... */ const g=new THREE.Group(); const b=new THREE.Mesh(new THREE.CylinderGeometry(.6,.65,.3,16),mat); b.position.y=.15; g.add(b); const bd=new THREE.Mesh(new THREE.CylinderGeometry(.4,.5,1.2,16),mat); bd.position.y=b.position.y+.15+.6; g.add(bd); const h=new THREE.Mesh(new THREE.SphereGeometry(.4,16,12),mat); h.position.y=bd.position.y+.6+.3; g.add(h); const cV=new THREE.Mesh(new THREE.BoxGeometry(.1,.45,.1),mat); cV.position.y=h.position.y+.35+.1; g.add(cV); const cH=new THREE.Mesh(new THREE.BoxGeometry(.3,.1,.1),mat); cH.position.y=h.position.y+.35+.2; g.add(cH); g.scale.set(this.basePieceScale,this.basePieceScale,this.basePieceScale); return g; },
+        setupThreeJS() { /* ... (same as Iteration 12) ... */ const container = document.getElementById("threejs-container"); if (!container) { this.log("ERROR: 3js container missing."); return; } this.threeScene = new THREE.Scene(); const skyGeo = new THREE.SphereGeometry(500, 32, 16); const skyMat = new THREE.ShaderMaterial({uniforms: {topColor: { value: new THREE.Color(0x3a4f6f) }, bottomColor: { value: new THREE.Color(0x1a2533) }, offset: { value: 33 }, exponent: { value: 0.6 }}, vertexShader: `varying vec3 vWorldPosition; void main() { vec4 worldPosition = modelMatrix * vec4( position, 1.0 ); vWorldPosition = worldPosition.xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`, fragmentShader: `uniform vec3 topColor; uniform vec3 bottomColor; uniform float offset; uniform float exponent; varying vec3 vWorldPosition; void main() { float h = normalize( vWorldPosition + offset ).y; gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 ); }`, side: THREE.BackSide }); this.threeSkybox = new THREE.Mesh(skyGeo, skyMat); this.threeScene.add(this.threeSkybox); this.threeCamera = new THREE.PerspectiveCamera(50, container.clientWidth / Math.max(1, container.clientHeight), 0.1, 1000); this.threeCamera.position.set(0, 9.5, 10.5); this.threeCamera.lookAt(0, 0.5, 0); this.threeRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false }); this.threeRenderer.setSize(container.clientWidth, container.clientHeight); this.threeRenderer.shadowMap.enabled = true; this.threeRenderer.shadowMap.type = THREE.PCFSoftShadowMap; container.innerHTML = ""; container.appendChild(this.threeRenderer.domElement); const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); this.threeScene.add(ambientLight); const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9); directionalLight.position.set(10, 15, 8); directionalLight.castShadow = true; directionalLight.shadow.mapSize.width = 2048; directionalLight.shadow.mapSize.height = 2048; directionalLight.shadow.camera.near = 0.5; directionalLight.shadow.camera.far = 50; directionalLight.shadow.bias = -0.0005; this.threeScene.add(directionalLight); this.threeBoardGroup = new THREE.Group(); this.threeScene.add(this.threeBoardGroup); const squareGeo = new THREE.PlaneGeometry(this.squareSize, this.squareSize); for (let r = 0; r < 8; r++) { for (let f = 0; f < 8; f++) { const iL = (r + f) % 2 === 0; const sM = new THREE.MeshStandardMaterial({ color: iL ? 0xd1d1d1 : 0x5f5f6f, metalness: 0.1, roughness: 0.8 }); const sMs = new THREE.Mesh(squareGeo, sM); sMs.rotation.x = -Math.PI / 2; sMs.position.set( f * this.squareSize - (this.squareSize * 3.5), 0, r * this.squareSize - (this.squareSize * 3.5) ); sMs.receiveShadow = true; this.threeBoardGroup.add(sMs); } } this.updateThreeJSBoardFromFEN(new Chess().fen(), true); const animate = (timestamp) => { requestAnimationFrame(animate); const now = timestamp || performance.now(); this.updateVFX(now); this.animationJobs = this.animationJobs.filter(job => { const elapsedTime = now - job.startTime; const progress = Math.min(elapsedTime / job.duration, 1); job.group.position.lerpVectors(job.startPos, job.targetPos, progress); job.group.position.y = job.startPos.y + Math.sin(progress * Math.PI) * 0.5; if (job.capturedGroup) { job.capturedGroup.traverse(child => { if (child.isMesh && child.material) { if (!child.material.clonedForFade) { child.material = child.material.clone(); child.material.transparent = true; child.material.clonedForFade = true; } child.material.opacity = 1 - progress; } }); const scale = 1 - progress; job.capturedGroup.scale.set(scale, scale, scale); } if (progress >= 1) { job.group.position.copy(job.targetPos); job.group.position.y = 0; job.pieceData.isAnimating = false; if (this.threePieces[job.fromAlg] === job.pieceData) delete this.threePieces[job.fromAlg]; this.threePieces[job.toAlg] = job.pieceData; this.threePieces[job.toAlg].group = job.group; if (job.capturedGroup) { this.threeBoardGroup.remove(job.capturedGroup); if (job.capturedGroup.geometry) job.capturedGroup.geometry.dispose(); job.capturedGroup.traverse(c => { if(c.material && c.material.dispose) c.material.dispose(); }); if (this.threePieces[job.capturedAlg] && this.threePieces[job.capturedAlg].group === job.capturedGroup) delete this.threePieces[job.capturedAlg]; } this.updateThreeJSBoardFromFEN(this.chessInstance.fen()); return false; } return true; }); this.threeRenderer.render(this.threeScene, this.threeCamera); }; animate(); window.addEventListener('resize', () => { const container = document.getElementById("threejs-container"); const nW = container.clientWidth; const nH = container.clientHeight; if (this.threeRenderer && nW > 0 && nH > 0) { this.threeCamera.aspect = nW / nH; this.threeCamera.updateProjectionMatrix(); this.threeRenderer.setSize(nW, nH); } }, false); this.log("3js scene active."); },
+        getThreeJSPosition(alg) { /* ... (same as Iteration 12) ... */ const f = alg.charCodeAt(0) - 97; const r = parseInt(alg[1]) - 1; return new THREE.Vector3(f * this.squareSize - (this.squareSize * 3.5), 0, (7-r) * this.squareSize - (this.squareSize * 3.5)); },
+        updateThreeJSBoardFromFEN(fen, isInitialSetup = false) { /* ... (same as Iteration 12) ... */ if (!this.threeBoardGroup) return; const bCfg = new Chess(fen).board(); const cFenP = {}; for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) { const sD = bCfg[r][f]; if (sD) { const alg = `${String.fromCharCode(97 + f)}${8 - r}`; cFenP[alg] = sD; const aTTSq = this.animationJobs.find(j => j.toAlg === alg); if (aTTSq) { if (this.encounterPieceStates[alg]) this.updateThreeJSPieceAppearance(alg, this.encounterPieceStates[alg], aTTSq.group); continue; } let pE = this.threePieces[alg]; if (pE && !pE.isAnimating) { if (pE.type === sD.type && pE.color === sD.color) this.updateThreeJSPieceAppearance(alg, this.encounterPieceStates[alg]); else { this.threeBoardGroup.remove(pE.group); if(pE.group) pE.group.traverse(c => {if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose();}); delete this.threePieces[alg]; this.createAndAddThreeJSPiece(sD.type, sD.color, alg); } } else if (!pE) this.createAndAddThreeJSPiece(sD.type, sD.color, alg); } } const sITP = Object.keys(this.threePieces); for (const alg of sITP) { const pE = this.threePieces[alg]; if (!pE) continue; if (!cFenP[alg] && !pE.isAnimating) { this.threeBoardGroup.remove(pE.group); if(pE.group) pE.group.traverse(c => {if(c.geometry) c.geometry.dispose(); if(c.material) c.material.dispose();}); delete this.threePieces[alg]; } } if (isInitialSetup) for (const alg in this.threePieces) if (this.threePieces[alg] && this.threePieces[alg].group) this.threePieces[alg].group.position.y = 0; },
+        createAndAddThreeJSPiece(type, color, alg) { /* ... (same as Iteration 12) ... */ const pM = this.pieceMaterials[color].clone(); let pG; switch (type) { case 'p': pG = this.createPawnModel(pM); break; case 'r': pG = this.createRookModel(pM); break; case 'n': pG = this.createKnightModel(pM); break; case 'b': pG = this.createBishopModel(pM); break; case 'q': pG = this.createQueenModel(pM); break; case 'k': pG = this.createKingModel(pM); break; default:  pG = this.createPawnModel(pM); } pG.position.copy(this.getThreeJSPosition(alg)); pG.traverse(c => { if (c.isMesh) c.castShadow = true; }); this.threeBoardGroup.add(pG); this.threePieces[alg] = { group: pG, type: type, color: color, originalMaterialKey: color, shieldMesh: null, consecrationEffectMesh: null, consecrationSourceMesh: null, dominanceEffectMesh: null, dominanceRangeMesh: null, isAnimating: false }; if (this.isEncounterActive && this.encounterPieceStates[alg]) this.updateThreeJSPieceAppearance(alg, this.encounterPieceStates[alg]); return pG; },
+        updateThreeJSPieceAppearance(alg, pS, sG = null) { /* ... (same as Iteration 12) ... */ const pieceEntry = this.threePieces[alg]; const groupToUpdate = sG || (pieceEntry ? pieceEntry.group : null); if (!groupToUpdate || !pS) return; let targetMaterialKey = pS.color; if (pS.isDominated) targetMaterialKey = `dominated_${pS.color}`; else if (pS.type === 'r' && pS.isEntrenched) targetMaterialKey = `entrenched_${pS.color}`; else if (pS.type === 'b' && pS.isConsecratedSource) targetMaterialKey = `consecrated_source_${pS.color}`; const newMaterial = (this.pieceMaterials[targetMaterialKey] || this.pieceMaterials[pS.color]).clone(); groupToUpdate.traverse((child) => { if (child.isMesh && child !== (pieceEntry ? pieceEntry.shieldMesh : null) && child !== (pieceEntry ? pieceEntry.consecrationEffectMesh : null) && child !== (pieceEntry ? pieceEntry.consecrationSourceMesh : null) && child !== (pieceEntry ? pieceEntry.dominanceEffectMesh : null) && child !== (pieceEntry ? pieceEntry.dominanceRangeMesh : null) ) child.material = newMaterial; }); if (pieceEntry) pieceEntry.originalMaterialKey = targetMaterialKey; if (pieceEntry) { if (pS.type === 'r' && pS.isEntrenched) { if (!pieceEntry.shieldMesh) { pieceEntry.shieldMesh = new THREE.Mesh(this.shieldGeometry, this.pieceMaterials.shield.clone()); pieceEntry.shieldMesh.position.y = .8 * this.basePieceScale; groupToUpdate.add(pieceEntry.shieldMesh); } pieceEntry.shieldMesh.visible = true; } else if (pieceEntry.shieldMesh) pieceEntry.shieldMesh.visible = false; if (pS.isReceivingConsecration) { if (!pieceEntry.consecrationEffectMesh) { pieceEntry.consecrationEffectMesh = this.getVFXObject('consecration_receiver'); if(pieceEntry.consecrationEffectMesh) groupToUpdate.add(pieceEntry.consecrationEffectMesh); } if(pieceEntry.consecrationEffectMesh) pieceEntry.consecrationEffectMesh.visible = true; } else if (pieceEntry.consecrationEffectMesh) pieceEntry.consecrationEffectMesh.visible = false; if (pS.type === 'b' && pS.isConsecratedSource) { if (!pieceEntry.consecrationSourceMesh) { const groundGeo = new THREE.CircleGeometry(this.squareSize * 0.6, 32); pieceEntry.consecrationSourceMesh = new THREE.Mesh(groundGeo, this.consecrationSourceGroundMaterial.clone()); pieceEntry.consecrationSourceMesh.rotation.x = -Math.PI / 2; pieceEntry.consecrationSourceMesh.position.y = 0.01; groupToUpdate.add(pieceEntry.consecrationSourceMesh); } pieceEntry.consecrationSourceMesh.visible = true; } else if (pieceEntry.consecrationSourceMesh) pieceEntry.consecrationSourceMesh.visible = false; if (pS.isDominated) { if (!pieceEntry.dominanceEffectMesh) { pieceEntry.dominanceEffectMesh = this.getVFXObject('dominated_effect'); if(pieceEntry.dominanceEffectMesh) groupToUpdate.add(pieceEntry.dominanceEffectMesh); } if(pieceEntry.dominanceEffectMesh) pieceEntry.dominanceEffectMesh.visible = true; } else if (pieceEntry.dominanceEffectMesh) pieceEntry.dominanceEffectMesh.visible = false; if (pS.type === 'q' && this.pieces.queen && this.pieces.queen.dominanceAuraRange > 0) { const range = this.pieces.queen.dominanceAuraRange * this.squareSize; if (!pieceEntry.dominanceRangeMesh || pieceEntry.dominanceRangeMesh.userData.range !== range) { if (pieceEntry.dominanceRangeMesh) groupToUpdate.remove(pieceEntry.dominanceRangeMesh); const ringGeo = new THREE.RingGeometry(range - 0.05, range + 0.05, 64); pieceEntry.dominanceRangeMesh = new THREE.Mesh(ringGeo, this.dominanceAuraRangeMaterial.clone()); pieceEntry.dominanceRangeMesh.rotation.x = -Math.PI / 2; pieceEntry.dominanceRangeMesh.position.y = 0.02; pieceEntry.dominanceRangeMesh.userData.range = range; groupToUpdate.add(pieceEntry.dominanceRangeMesh); } pieceEntry.dominanceRangeMesh.visible = true; } else if (pieceEntry.dominanceRangeMesh) pieceEntry.dominanceRangeMesh.visible = false; } },
+        buyAestheticBooster(bId) { /* ... (same as Iteration 12) ... */ this.playSound('click'); this.log(`PH:Buy ${bId} (5 AS)`); if (this.resources.aetherShards >= 5) { this.resources.aetherShards -= 5; this.log(`'${bId}' bought!`); this.updateUI(); this.highlightResourceUpdate('aetherShardsDisplay', true);} else { this.log(`No AS for '${bId}'.`); this.playSound('error'); } },
+        saveGame(isAutoSave = false) { 
+            const saveData = { resources: this.resources, pieces: this.pieces, gameSpeedMultiplier: this.gameSpeedMultiplier, baseAiSearchDepth: this.baseAiSearchDepth }; 
+            try { 
+                localStorage.setItem("chronoChessSaveData_v13", JSON.stringify(saveData)); 
+                if (!isAutoSave) {
+                    this.log("Game Saved (v13)."); 
+                } else {
+                    this.saveCounter++;
+                    if (this.saveCounter % 5 === 0) { // Log every 5 auto-saves (5 minutes)
+                        this.log("Auto-saved progress.");
                     }
-                    child.material.opacity = 1 - progress;
-                  }
-                });
-                const scale = 1 - progress;
-                job.capturedGroup.scale.set(scale, scale, scale);
-              }
-              if (progress >= 1) {
-                job.group.position.copy(job.targetPos);
-                job.group.position.y = 0;
-                job.pieceData.isAnimating = false;
-                if (this.threePieces[job.fromAlg] === job.pieceData)
-                  delete this.threePieces[job.fromAlg];
-                this.threePieces[job.toAlg] = job.pieceData;
-                this.threePieces[job.toAlg].group = job.group;
-                if (job.capturedGroup) {
-                  this.threeBoardGroup.remove(job.capturedGroup);
-                  if (job.capturedGroup.geometry)
-                    job.capturedGroup.geometry.dispose();
-                  job.capturedGroup.traverse((c) => {
-                    if (c.material && c.material.dispose) c.material.dispose();
-                  });
-                  if (
-                    this.threePieces[job.capturedAlg] &&
-                    this.threePieces[job.capturedAlg].group ===
-                      job.capturedGroup
-                  )
-                    delete this.threePieces[job.capturedAlg];
                 }
-                this.updateThreeJSBoardFromFEN(this.chessInstance.fen());
-                return false;
-              }
-              return true;
-            });
-            this.threeRenderer.render(this.threeScene, this.threeCamera);
-          };
-          animate();
-          window.addEventListener(
-            "resize",
-            () => {
-              const nW = container.clientWidth;
-              const nH = container.clientHeight;
-              if (nW > 0 && nH > 0) {
-                this.threeCamera.aspect = nW / nH;
-                this.threeCamera.updateProjectionMatrix();
-                this.threeRenderer.setSize(nW, nH);
-              }
-            },
-            false
-          );
-          this.log("3js scene active.");
+            } catch (e) { 
+                this.log("Error saving game: " + e.message); 
+            } 
         },
-        getThreeJSPosition(alg) {
-          /* ... (same as Iteration 11) ... */ const f = alg.charCodeAt(0) - 97;
-          const r = parseInt(alg[1]) - 1;
-          return new THREE.Vector3(
-            f * this.squareSize - this.squareSize * 3.5,
-            0,
-            (7 - r) * this.squareSize - this.squareSize * 3.5
-          );
-        },
-        updateThreeJSBoardFromFEN(fen, isInitialSetup = false) {
-          /* ... (same as Iteration 11) ... */ if (!this.threeBoardGroup)
-            return;
-          const bCfg = new Chess(fen).board();
-          const cFenP = {};
-          for (let r = 0; r < 8; r++)
-            for (let f = 0; f < 8; f++) {
-              const sD = bCfg[r][f];
-              if (sD) {
-                const alg = `${String.fromCharCode(97 + f)}${8 - r}`;
-                cFenP[alg] = sD;
-                const aTTSq = this.animationJobs.find((j) => j.toAlg === alg);
-                if (aTTSq) {
-                  if (this.encounterPieceStates[alg])
-                    this.updateThreeJSPieceAppearance(
-                      alg,
-                      this.encounterPieceStates[alg],
-                      aTTSq.group
-                    );
-                  continue;
-                }
-                let pE = this.threePieces[alg];
-                if (pE && !pE.isAnimating) {
-                  if (pE.type === sD.type && pE.color === sD.color)
-                    this.updateThreeJSPieceAppearance(
-                      alg,
-                      this.encounterPieceStates[alg]
-                    );
-                  else {
-                    this.threeBoardGroup.remove(pE.group);
-                    if (pE.group)
-                      pE.group.traverse((c) => {
-                        if (c.geometry) c.geometry.dispose();
-                        if (c.material) c.material.dispose();
-                      });
-                    delete this.threePieces[alg];
-                    this.createAndAddThreeJSPiece(sD.type, sD.color, alg);
-                  }
-                } else if (!pE)
-                  this.createAndAddThreeJSPiece(sD.type, sD.color, alg);
-              }
-            }
-          const sITP = Object.keys(this.threePieces);
-          for (const alg of sITP) {
-            const pE = this.threePieces[alg];
-            if (!pE) continue;
-            if (!cFenP[alg] && !pE.isAnimating) {
-              this.threeBoardGroup.remove(pE.group);
-              if (pE.group)
-                pE.group.traverse((c) => {
-                  if (c.geometry) c.geometry.dispose();
-                  if (c.material) c.material.dispose();
-                });
-              delete this.threePieces[alg];
-            }
-          }
-          if (isInitialSetup)
-            for (const alg in this.threePieces)
-              if (this.threePieces[alg] && this.threePieces[alg].group)
-                this.threePieces[alg].group.position.y = 0;
-        },
-        createAndAddThreeJSPiece(type, color, alg) {
-          /* ... (same as Iteration 11) ... */ const pM =
-            this.pieceMaterials[color].clone();
-          let pG;
-          switch (type) {
-            case "p":
-              pG = this.createPawnModel(pM);
-              break;
-            case "r":
-              pG = this.createRookModel(pM);
-              break;
-            case "n":
-              pG = this.createKnightModel(pM);
-              break;
-            case "b":
-              pG = this.createBishopModel(pM);
-              break;
-            case "q":
-              pG = this.createQueenModel(pM);
-              break;
-            case "k":
-              pG = this.createKingModel(pM);
-              break;
-            default:
-              pG = this.createPawnModel(pM);
-          }
-          pG.position.copy(this.getThreeJSPosition(alg));
-          pG.traverse((c) => {
-            if (c.isMesh) c.castShadow = true;
-          });
-          this.threeBoardGroup.add(pG);
-          this.threePieces[alg] = {
-            group: pG,
-            type: type,
-            color: color,
-            originalMaterialKey: color,
-            shieldMesh: null,
-            consecrationEffectMesh: null,
-            consecrationSourceMesh: null,
-            dominanceEffectMesh: null,
-            dominanceRangeMesh: null,
-            isAnimating: false,
-          };
-          if (this.isEncounterActive && this.encounterPieceStates[alg])
-            this.updateThreeJSPieceAppearance(
-              alg,
-              this.encounterPieceStates[alg]
-            );
-          return pG;
-        },
-        updateThreeJSPieceAppearance(alg, pS, sG = null) {
-          /* ... (use getVFXObject for dominated/consecrated receiver) ... */ const pieceEntry =
-            this.threePieces[alg];
-          const groupToUpdate = sG || (pieceEntry ? pieceEntry.group : null);
-          if (!groupToUpdate || !pS) return;
-          let targetMaterialKey = pS.color;
-          if (pS.isDominated) targetMaterialKey = `dominated_${pS.color}`;
-          else if (pS.type === "r" && pS.isEntrenched)
-            targetMaterialKey = `entrenched_${pS.color}`;
-          else if (pS.type === "b" && pS.isConsecratedSource)
-            targetMaterialKey = `consecrated_source_${pS.color}`;
-          const newMaterial = (
-            this.pieceMaterials[targetMaterialKey] ||
-            this.pieceMaterials[pS.color]
-          ).clone();
-          groupToUpdate.traverse((child) => {
-            if (
-              child.isMesh &&
-              child !== (pieceEntry ? pieceEntry.shieldMesh : null) &&
-              child !==
-                (pieceEntry ? pieceEntry.consecrationEffectMesh : null) &&
-              child !==
-                (pieceEntry ? pieceEntry.consecrationSourceMesh : null) &&
-              child !== (pieceEntry ? pieceEntry.dominanceEffectMesh : null) &&
-              child !== (pieceEntry ? pieceEntry.dominanceRangeMesh : null)
-            )
-              child.material = newMaterial;
-          });
-          if (pieceEntry) pieceEntry.originalMaterialKey = targetMaterialKey;
-          if (pieceEntry) {
-            if (pS.type === "r" && pS.isEntrenched) {
-              if (!pieceEntry.shieldMesh) {
-                pieceEntry.shieldMesh = new THREE.Mesh(
-                  this.shieldGeometry,
-                  this.pieceMaterials.shield.clone()
-                );
-                pieceEntry.shieldMesh.position.y = 0.8 * this.basePieceScale;
-                groupToUpdate.add(pieceEntry.shieldMesh);
-              }
-              pieceEntry.shieldMesh.visible = true;
-            } else if (pieceEntry.shieldMesh)
-              pieceEntry.shieldMesh.visible = false;
-            if (pS.isReceivingConsecration) {
-              if (!pieceEntry.consecrationEffectMesh) {
-                pieceEntry.consecrationEffectMesh = this.getVFXObject(
-                  "consecration_receiver"
-                );
-                if (pieceEntry.consecrationEffectMesh)
-                  groupToUpdate.add(pieceEntry.consecrationEffectMesh);
-              }
-              if (pieceEntry.consecrationEffectMesh)
-                pieceEntry.consecrationEffectMesh.visible = true;
-            } else if (pieceEntry.consecrationEffectMesh)
-              pieceEntry.consecrationEffectMesh.visible = false;
-            if (pS.type === "b" && pS.isConsecratedSource) {
-              if (!pieceEntry.consecrationSourceMesh) {
-                const groundGeo = new THREE.CircleGeometry(
-                  this.squareSize * 0.6,
-                  32
-                );
-                pieceEntry.consecrationSourceMesh = new THREE.Mesh(
-                  groundGeo,
-                  this.consecrationSourceGroundMaterial.clone()
-                );
-                pieceEntry.consecrationSourceMesh.rotation.x = -Math.PI / 2;
-                pieceEntry.consecrationSourceMesh.position.y = 0.01;
-                groupToUpdate.add(pieceEntry.consecrationSourceMesh);
-              }
-              pieceEntry.consecrationSourceMesh.visible = true;
-            } else if (pieceEntry.consecrationSourceMesh)
-              pieceEntry.consecrationSourceMesh.visible = false;
-            if (pS.isDominated) {
-              if (!pieceEntry.dominanceEffectMesh) {
-                pieceEntry.dominanceEffectMesh =
-                  this.getVFXObject("dominated_effect");
-                if (pieceEntry.dominanceEffectMesh)
-                  groupToUpdate.add(pieceEntry.dominanceEffectMesh);
-              }
-              if (pieceEntry.dominanceEffectMesh)
-                pieceEntry.dominanceEffectMesh.visible = true;
-            } else if (pieceEntry.dominanceEffectMesh)
-              pieceEntry.dominanceEffectMesh.visible = false;
-            if (
-              pS.type === "q" &&
-              this.pieces.queen &&
-              this.pieces.queen.dominanceAuraRange > 0
-            ) {
-              const range =
-                this.pieces.queen.dominanceAuraRange * this.squareSize;
-              if (
-                !pieceEntry.dominanceRangeMesh ||
-                pieceEntry.dominanceRangeMesh.userData.range !== range
-              ) {
-                if (pieceEntry.dominanceRangeMesh)
-                  groupToUpdate.remove(pieceEntry.dominanceRangeMesh);
-                const ringGeo = new THREE.RingGeometry(
-                  range - 0.05,
-                  range + 0.05,
-                  64
-                );
-                pieceEntry.dominanceRangeMesh = new THREE.Mesh(
-                  ringGeo,
-                  this.dominanceAuraRangeMaterial.clone()
-                );
-                pieceEntry.dominanceRangeMesh.rotation.x = -Math.PI / 2;
-                pieceEntry.dominanceRangeMesh.position.y = 0.02;
-                pieceEntry.dominanceRangeMesh.userData.range = range;
-                groupToUpdate.add(pieceEntry.dominanceRangeMesh);
-              }
-              pieceEntry.dominanceRangeMesh.visible = true;
-            } else if (pieceEntry.dominanceRangeMesh)
-              pieceEntry.dominanceRangeMesh.visible = false;
-          }
-        },
-        buyAestheticBooster(bId) {
-          /* ... (same as Iteration 11) ... */ this.playSound("click");
-          this.log(`PH:Buy ${bId} (5 AS)`);
-          if (this.resources.aetherShards >= 5) {
-            this.resources.aetherShards -= 5;
-            this.log(`'${bId}' bought!`);
-            this.updateUI();
-            this.highlightResourceUpdate("aetherShardsDisplay", true);
-          } else {
-            this.log(`No AS for '${bId}'.`);
-            this.playSound("error");
-          }
-        },
-        saveGame() {
-          /* ... (save v12) ... */ this.playSound("click", 0.5, 0.1, 1000, 700);
-          const sD = {
-            resources: this.resources,
-            pieces: this.pieces,
-            gameSpeedMultiplier: this.gameSpeedMultiplier,
-            baseAiSearchDepth: this.baseAiSearchDepth,
-          };
-          try {
-            localStorage.setItem("chronoChessSaveData_v12", JSON.stringify(sD));
-            this.log("Saved(v12).");
-          } catch (e) {
-            this.log("Save err:" + e.message);
-          }
-        },
-        loadGame() {
-          /* ... (load v12, load baseAiSearchDepth) ... */ this.playSound(
-            "click",
-            0.5,
-            0.1,
-            700,
-            1000
-          );
-          let lOk = false;
-          try {
-            const sDS = localStorage.getItem("chronoChessSaveData_v12");
-            if (sDS) {
-              const sD = JSON.parse(sDS);
-              this.resources =
-                sD.resources || this.getDefaultPieces().resources;
-              const dP = this.getDefaultPieces();
-              if (sD.pieces) {
-                this.pieces = {};
-                for (const pT in dP) {
-                  if (dP.hasOwnProperty(pT)) {
-                    this.pieces[pT] = JSON.parse(JSON.stringify(dP[pT]));
-                    if (sD.pieces[pT])
-                      this.pieces[pT] = {
-                        ...this.pieces[pT],
-                        ...sD.pieces[pT],
-                      };
-                    this.restoreEvolutionCostFunctions(this.pieces[pT], dP[pT]);
-                  }
-                }
-              } else this.pieces = dP;
-              this.gameSpeedMultiplier = sD.gameSpeedMultiplier || 1;
-              this.baseAiSearchDepth = sD.baseAiSearchDepth || 2;
-              this.setGameSpeed(this.gameSpeedMultiplier);
-              /* This will also set aiSearchDepth */ this.updateGameSpeedButtons();
-              this.log("Loaded(v12).");
-              lOk = true;
-            } else this.log("No v12 save.");
-          } catch (e) {
-            this.log("Load v12 err:" + e.message);
-            this.resources = {
-              temporalEssence: 0,
-              mnemonicDust: 0,
-              aetherShards: 0,
-              arcaneMana: 0,
-            };
-            this.pieces = this.getDefaultPieces();
-            this.gameSpeedMultiplier = 1;
-            this.baseAiSearchDepth = 2;
-            this.setGameSpeed(1);
-          }
-          if (!lOk && !localStorage.getItem("chronoChessSaveData_v12")) {
-            this.log("Fresh start.");
-            this.resources = {
-              temporalEssence: 0,
-              mnemonicDust: 0,
-              aetherShards: 0,
-              arcaneMana: 0,
-            };
-            this.pieces = this.getDefaultPieces();
-            this.gameSpeedMultiplier = 1;
-            this.baseAiSearchDepth = 2;
-            this.setGameSpeed(1);
-          }
-          const dPFC = this.getDefaultPieces();
-          for (const t in dPFC) {
-            if (!this.pieces[t])
-              this.pieces[t] = JSON.parse(JSON.stringify(dPFC[t]));
-            this.restoreEvolutionCostFunctions(this.pieces[t], dPFC[t]);
-          }
-          this.updateUI();
-          this.updateGameSpeedButtons();
-        },
-        resetGame() {
-          /* ... (clear v12) ... */ this.playSound("error", 0.8, 0.3);
-          if (confirm("Sure? No undo.")) {
-            [
-              "chronoChessSaveData_v12",
-              "chronoChessSaveData_v11",
-              "chronoChessSaveData_v10",
-              "chronoChessSaveData_v9",
-              "chronoChessSaveData_v8",
-              "chronoChessSaveData_v7",
-              "chronoChessSaveData_v6",
-              "chronoChessSaveData_v5",
-              "chronoChessSaveData_v4",
-              "chronoChessSaveData_v3",
-              "chronoChessSaveData_v2",
-              "chronoChessSaveData",
-            ].forEach((k) => localStorage.removeItem(k));
-            this.resources = {
-              temporalEssence: 0,
-              mnemonicDust: 0,
-              aetherShards: 0,
-              arcaneMana: 0,
-            };
-            this.pieces = this.getDefaultPieces();
-            this.gameSpeedMultiplier = 1;
-            this.baseAiSearchDepth = 2;
-            this.setGameSpeed(1);
-            this.updateGameSpeedButtons();
-            this.log("Reset.");
-            this.updateUI();
-            this.updateThreeJSBoardFromFEN(new Chess().fen(), true);
-          }
-        },
-        updateUI() {
-          /* ... (same as Iteration 11) ... */ document.getElementById(
-            "temporalEssence"
-          ).textContent = Math.floor(this.resources.temporalEssence);
-          document.getElementById("mnemonicDust").textContent = Math.floor(
-            this.resources.mnemonicDust
-          );
-          document.getElementById("aetherShards").textContent = Math.floor(
-            this.resources.aetherShards
-          );
-          document.getElementById("arcaneMana").textContent =
-            this.resources.arcaneMana.toFixed(1);
-          const pTs = ["pawn", "knight", "bishop", "rook", "queen", "king"];
-          pTs.forEach((t) => {
-            const pC = this.pieces[t];
-            if (pC) {
-              for (const attr in pC) {
-                if (attr !== "evolutionCosts" && pC.hasOwnProperty(attr)) {
-                  const elId = `${t}${
-                    attr.charAt(0).toUpperCase() + attr.slice(1)
-                  }`;
-                  const el = document.getElementById(elId);
-                  if (el) {
-                    if (attr === "promotionPreference")
-                      el.textContent = pC[attr].toUpperCase();
-                    else if (
-                      attr.includes("Chance") ||
-                      (attr.includes("Threshold") && t === "king")
-                    )
-                      el.textContent = (pC[attr] * 100).toFixed(0) + "%";
-                    else if (attr.includes("Bonus"))
-                      el.textContent = pC[attr].toFixed(1);
-                    else el.textContent = pC[attr];
-                  }
-                  const cElId = `${elId}Cost`;
-                  const cEl = document.getElementById(cElId);
-                  const btnEl = el
-                    ? el
-                        .closest(".piece-evolution-section")
-                        ?.querySelector(
-                          `button[onclick*="'${t}', '${attr}'"]`
-                        ) || cEl?.parentElement.nextElementSibling
-                    : null;
-                  if (cEl && pC.evolutionCosts && pC.evolutionCosts[attr]) {
-                    let cVal =
-                      attr === "setPromotionPreference" ? undefined : pC[attr];
-                    try {
-                      const cost = Math.ceil(pC.evolutionCosts[attr](cVal));
-                      cEl.textContent = cost;
-                      if (btnEl && btnEl.tagName === "BUTTON") {
-                        const baseTitle =
-                          btnEl.getAttribute("data-base-title") || "";
-                        btnEl.title = `${baseTitle} (Cost: ${cost} ${(
-                          currencyMapForTooltip[attr] || ""
-                        ).toUpperCase()})`;
-                      }
-                    } catch (e) {
-                      cEl.textContent = "N/A";
-                      if (btnEl && btnEl.tagName === "BUTTON") {
-                        const baseTitle =
-                          btnEl.getAttribute("data-base-title") || "";
-                        btnEl.title = `${baseTitle} (Maxed Out)`;
-                      }
-                    }
-                  } else if (
-                    btnEl &&
-                    btnEl.tagName === "BUTTON" &&
-                    attr === "setPromotionPreference"
-                  ) {
-                    const cost = Math.ceil(pC.evolutionCosts[attr]());
-                    const baseTitle =
-                      btnEl.getAttribute("data-base-title") || "";
-                    btnEl.title = `${baseTitle} (Cost: ${cost} ${(
-                      currencyMapForTooltip[attr] || ""
-                    ).toUpperCase()})`;
-                  }
-                }
-              }
-              if (t === "pawn")
-                ["q", "n", "r", "b"].forEach((p) => {
-                  const b = document.getElementById(`pref_${p}`);
-                  if (b)
-                    b.classList.toggle(
-                      "selected-preference",
-                      pC.promotionPreference === p
-                    );
-                });
-            }
-          });
-          document.getElementById("startEncounterBtn").disabled =
-            this.isEncounterActive;
-          document.getElementById("endEncounterBtn").style.display = this
-            .isEncounterActive
-            ? "inline-block"
-            : "none";
-          this.updateUICooldownDisplay();
-        },
+        loadGame() { /* ... (load v13) ... */ this.playSound('click', 0.5, 0.1, 700, 1000); let lOk = false; try { const sDS = localStorage.getItem("chronoChessSaveData_v13"); if (sDS) { const sD = JSON.parse(sDS); this.resources = sD.resources || this.getDefaultPieces().resources; const dP = this.getDefaultPieces(); if (sD.pieces) { this.pieces = {}; for (const pT in dP) { if (dP.hasOwnProperty(pT)) { this.pieces[pT] = JSON.parse(JSON.stringify(dP[pT])); if (sD.pieces[pT]) this.pieces[pT] = { ...this.pieces[pT], ...sD.pieces[pT] }; this.restoreEvolutionCostFunctions(this.pieces[pT], dP[pT]); } } } else this.pieces = dP; this.gameSpeedMultiplier = sD.gameSpeedMultiplier || 1; this.baseAiSearchDepth = sD.baseAiSearchDepth || 2; this.setGameSpeed(this.gameSpeedMultiplier); this.updateGameSpeedButtons(); this.log("Loaded(v13)."); lOk = true; } else this.log("No v13 save."); } catch (e) { this.log("Load v13 err:" + e.message); this.resources = { temporalEssence: 0, mnemonicDust: 0, aetherShards: 0, arcaneMana: 0 }; this.pieces = this.getDefaultPieces(); this.gameSpeedMultiplier = 1; this.baseAiSearchDepth = 2; this.setGameSpeed(1); } if (!lOk && !localStorage.getItem("chronoChessSaveData_v13")) { this.log("Fresh start."); this.resources = { temporalEssence: 0, mnemonicDust: 0, aetherShards: 0, arcaneMana: 0 }; this.pieces = this.getDefaultPieces(); this.gameSpeedMultiplier = 1; this.baseAiSearchDepth = 2; this.setGameSpeed(1); } const dPFC = this.getDefaultPieces(); for (const t in dPFC) { if (!this.pieces[t]) this.pieces[t] = JSON.parse(JSON.stringify(dPFC[t])); this.restoreEvolutionCostFunctions(this.pieces[t], dPFC[t]); } this.updateUI(); this.updateGameSpeedButtons(); },
+        resetGame() { /* ... (clear v13) ... */ this.playSound('error', 0.8, 0.3); if (confirm("Sure? No undo.")) { ["chronoChessSaveData_v13", "chronoChessSaveData_v12", "chronoChessSaveData_v11", "chronoChessSaveData_v10", "chronoChessSaveData_v9", "chronoChessSaveData_v8", "chronoChessSaveData_v7", "chronoChessSaveData_v6", "chronoChessSaveData_v5", "chronoChessSaveData_v4", "chronoChessSaveData_v3", "chronoChessSaveData_v2", "chronoChessSaveData"].forEach(k => localStorage.removeItem(k)); this.resources = { temporalEssence: 0, mnemonicDust: 0, aetherShards: 0, arcaneMana: 0 }; this.pieces = this.getDefaultPieces(); this.gameSpeedMultiplier = 1; this.baseAiSearchDepth = 2; this.setGameSpeed(1); this.updateGameSpeedButtons(); this.log("Reset."); this.updateUI(); this.updateThreeJSBoardFromFEN(new Chess().fen(), true); } },
+        updateUI() { /* ... (same as Iteration 12) ... */ document.getElementById("temporalEssence").textContent = Math.floor(this.resources.temporalEssence); document.getElementById("mnemonicDust").textContent = Math.floor(this.resources.mnemonicDust); document.getElementById("aetherShards").textContent = Math.floor(this.resources.aetherShards); document.getElementById("arcaneMana").textContent = this.resources.arcaneMana.toFixed(1); const pTs = ["pawn", "knight", "bishop", "rook", "queen", "king"]; pTs.forEach(t => { const pC = this.pieces[t]; if (pC) { for (const attr in pC) { if (attr !== "evolutionCosts" && pC.hasOwnProperty(attr)) { const elId = `${t}${attr.charAt(0).toUpperCase() + attr.slice(1)}`; const el = document.getElementById(elId); if (el) { if (attr === "promotionPreference") el.textContent = pC[attr].toUpperCase(); else if (attr.includes("Chance") || (attr.includes("Threshold") && t === "king")) el.textContent = (pC[attr] * 100).toFixed(0) + "%"; else if (attr.includes("Bonus")) el.textContent = pC[attr].toFixed(1); else el.textContent = pC[attr]; } const cElId = `${elId}Cost`; const cEl = document.getElementById(cElId); const btnEl = el ? el.closest('.piece-evolution-section')?.querySelector(`button[onclick*="'${t}', '${attr}'"]`) || cEl?.parentElement.nextElementSibling : null; if (cEl && pC.evolutionCosts && pC.evolutionCosts[attr]) { let cVal = (attr === "setPromotionPreference") ? undefined : pC[attr]; try { const cost = Math.ceil(pC.evolutionCosts[attr](cVal)); cEl.textContent = cost; if (btnEl && btnEl.tagName === 'BUTTON') { const baseTitle = btnEl.getAttribute('data-base-title') || ""; btnEl.title = `${baseTitle} (Cost: ${cost} ${ (currencyMapForTooltip[attr] || '').toUpperCase() })`; } } catch (e) { cEl.textContent = "N/A"; if (btnEl && btnEl.tagName === 'BUTTON') { const baseTitle = btnEl.getAttribute('data-base-title') || ""; btnEl.title = `${baseTitle} (Maxed Out)`; } } } else if (btnEl && btnEl.tagName === 'BUTTON' && attr === 'setPromotionPreference') { const cost = Math.ceil(pC.evolutionCosts[attr]()); const baseTitle = btnEl.getAttribute('data-base-title') || ""; btnEl.title = `${baseTitle} (Cost: ${cost} ${ (currencyMapForTooltip[attr] || '').toUpperCase() })`; } } } if (t === "pawn") ["q", "n", "r", "b"].forEach(p => { const b = document.getElementById(`pref_${p}`); if (b) b.classList.toggle("selected-preference", pC.promotionPreference === p); }); } }); document.getElementById("startEncounterBtn").disabled = this.isEncounterActive; document.getElementById("endEncounterBtn").style.display = this.isEncounterActive ? "inline-block" : "none"; this.updateUICooldownDisplay(); },
       };
-      const currencyMapForTooltip = {
-        marchSpeed: "TE",
-        resilience: "MD",
-        setPromotionPreference: "MD",
-        dashChance: "MD",
-        dashCooldown: "TE",
-        snipeRange: "MD",
-        consecrationTurns: "TE",
-        entrenchThreshold: "TE",
-        entrenchPower: "MD",
-        dominanceAuraRange: "MD",
-        manaRegenBonus: "TE",
-        royalDecreeUses: "MD",
-        lastStandThreshold: "TE",
-      };
+      const currencyMapForTooltip = { marchSpeed: "TE", resilience: "MD", setPromotionPreference: "MD", dashChance: "MD", dashCooldown: "TE", snipeRange: "MD", consecrationTurns: "TE", entrenchThreshold: "TE", entrenchPower: "MD", dominanceAuraRange: "MD", manaRegenBonus: "TE", royalDecreeUses: "MD", lastStandThreshold: "TE", };
 
       document.addEventListener("DOMContentLoaded", () => {
         game.init();

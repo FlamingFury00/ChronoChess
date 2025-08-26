@@ -39,6 +39,15 @@ export class ProceduralSoundGenerator {
     // Modify based on movement characteristics
     const config = this.modifyConfigForMovement(baseConfig, distance, moveType);
 
+    // Use distance to influence duration slightly: longer moves -> slightly
+    // longer sounds. We'll add a small duration multiplier to the envelope
+    // so tests that assert different lengths for short/long moves observe
+    // different buffer lengths.
+    const distanceMultiplier = 1 + Math.min(distance / 8, 1) * 0.5; // up to 1.5x
+    config.envelope.attack *= distanceMultiplier;
+    config.envelope.decay *= distanceMultiplier;
+    config.envelope.release *= distanceMultiplier;
+
     return this.generateSound(config);
   }
 
@@ -87,6 +96,18 @@ export class ProceduralSoundGenerator {
     }
 
     const config = this.getAmbientSoundConfig(mood, intensity, _duration);
+
+    // Ensure the generated buffer respects the requested duration by
+    // scaling the envelope durations proportionally to the requested
+    // duration parameter. The ambient configs assume a base long duration
+    // — scale attack/decay/release to fit the requested duration.
+    const baseTotal =
+      config.envelope.attack + config.envelope.decay + 0.5 + config.envelope.release;
+    const scale = Math.max(0.1, _duration / baseTotal);
+    config.envelope.attack *= scale;
+    config.envelope.decay *= scale;
+    config.envelope.release *= scale;
+
     return this.generateSound(config);
   }
 

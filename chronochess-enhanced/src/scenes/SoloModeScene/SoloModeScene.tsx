@@ -281,7 +281,7 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
             </div>
 
             <p className="solo-mode-scene__encounter-description">
-              Face the echoes of time in this endless battle. Each encounter rewards you with
+              Face the temporal disturbances in this endless battle. Each encounter rewards you with
               resources to evolve your pieces and grow stronger. The temporal anomaly grows more
               unstable with each victory...
             </p>

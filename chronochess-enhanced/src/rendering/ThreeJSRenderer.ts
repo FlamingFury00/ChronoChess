@@ -661,6 +661,19 @@ export class ThreeJSRenderer {
       lastModified: Date.now(),
     };
 
+    // Query engine for per-square piece evolution visual modifications if available
+    try {
+      const engine = (globalThis as any).chronoChessEngine;
+      if (engine && typeof engine.getPieceEvolutionData === 'function') {
+        const pe = engine.getPieceEvolutionData(square as any);
+        if (pe && Array.isArray(pe.visualModifications) && pe.visualModifications.length > 0) {
+          evolution.visualModifications = pe.visualModifications.slice();
+        }
+      }
+    } catch (err) {
+      // ignore; fall back to default evolution data
+    }
+
     const pieceGroup = this.createPieceModel(type, evolution);
 
     // Set correct material based on color

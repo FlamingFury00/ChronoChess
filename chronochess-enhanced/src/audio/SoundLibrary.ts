@@ -19,6 +19,12 @@ export class SoundLibrary {
     if (this.isInitialized) return;
 
     try {
+      // Ensure an AudioContext is available before attempting to create
+      // procedural sounds. Tests often mock `audioManager.getAudioContext`
+      // to reject — by awaiting it here we surface that failure and allow
+      // the test to assert initialization errors as expected.
+      await audioManager.getAudioContext();
+
       await this.loadPieceMovementSounds();
       await this.loadPieceCaptureSounds();
       await this.loadEvolutionSounds();

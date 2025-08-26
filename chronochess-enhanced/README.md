@@ -1,4 +1,4 @@
-# ChronoChess Enhanced
+# ChronoChess
 
 An idle-autobattler chess hybrid that combines traditional chess mechanics with idle progression systems, narrative encounters, and advanced 3D visualization.
 

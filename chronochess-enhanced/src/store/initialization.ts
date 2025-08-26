@@ -6,7 +6,7 @@ import { simpleSoundPlayer } from '../audio/SimpleSoundPlayer';
  * This function is called once when the app starts
  */
 export function initializeGameStore(): void {
-  console.log('🚀 Initializing ChronoChess Enhanced...');
+  console.log('🚀 Initializing ChronoChess...');
 
   const store = useGameStore.getState();
 
@@ -59,7 +59,7 @@ export function initializeGameStore(): void {
       }, 2000);
     }
 
-    console.log('✅ ChronoChess Enhanced initialization complete!');
+    console.log('✅ ChronoChess initialization complete!');
     console.log('📈 Game State:', {
       resources: store.resources,
       evolutions: store.evolutions.size,

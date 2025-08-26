@@ -38,7 +38,7 @@ docker-compose up chronochess-prod       # Production mode
 
 ## Architecture Overview
 
-ChronoChess Enhanced is an idle-autobattler chess hybrid built with React, TypeScript, and Vite. The architecture follows a modular pattern with clear separation of concerns.
+ChronoChess is an idle-autobattler chess hybrid built with React, TypeScript, and Vite. The architecture follows a modular pattern with clear separation of concerns.
 
 ### Core Systems Integration
 

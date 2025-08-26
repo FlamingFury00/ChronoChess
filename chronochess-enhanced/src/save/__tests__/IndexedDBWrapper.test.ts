@@ -2,13 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { IndexedDBWrapper } from '../IndexedDBWrapper';
 import type { SaveDatabase } from '../types';
 
-// Mock IndexedDB
-const mockIndexedDB = {
+// Mock IndexedDB (use `any` so tests can manipulate request handlers freely)
+const mockIndexedDB: any = {
   open: vi.fn(),
   deleteDatabase: vi.fn(),
 };
 
-const mockIDBDatabase = {
+const mockIDBDatabase: any = {
   createObjectStore: vi.fn(),
   transaction: vi.fn(),
   close: vi.fn(),
@@ -18,7 +18,7 @@ const mockIDBDatabase = {
   },
 };
 
-const mockIDBObjectStore = {
+const mockIDBObjectStore: any = {
   createIndex: vi.fn(),
   put: vi.fn(),
   get: vi.fn(),
@@ -29,16 +29,17 @@ const mockIDBObjectStore = {
   index: vi.fn(),
 };
 
-const mockIDBTransaction = {
+const mockIDBTransaction: any = {
   objectStore: vi.fn(() => mockIDBObjectStore),
   onerror: null,
 };
 
-const mockIDBRequest = {
+const mockIDBRequest: any = {
   result: null,
   error: null,
   onsuccess: null,
   onerror: null,
+  onupgradeneeded: null,
 };
 
 // Setup global mocks
@@ -46,6 +47,16 @@ Object.defineProperty(window, 'indexedDB', {
   value: mockIndexedDB,
   writable: true,
 });
+try {
+  // Also expose on globalThis and Node global so unqualified `indexedDB` calls
+  // in the implementation resolve to the mock during tests.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  globalThis.indexedDB = mockIndexedDB;
+  try {
+    (global as any).indexedDB = mockIndexedDB;
+  } catch {}
+} catch {}
 
 // Mock navigator.storage
 Object.defineProperty(navigator, 'storage', {
@@ -63,6 +74,38 @@ describe('IndexedDBWrapper', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Ensure each test starts with the mock IndexedDB installed. Some tests
+    // intentionally unset `window.indexedDB` and must not leak that state to
+    // other tests. Assign directly when possible (safer if property is
+    // non-configurable but writable); fall back to defineProperty otherwise.
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      window.indexedDB = mockIndexedDB;
+      // Mirror to globalThis/global for unqualified references
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      globalThis.indexedDB = mockIndexedDB;
+      try {
+        (global as any).indexedDB = mockIndexedDB;
+      } catch {}
+    } catch {
+      try {
+        Object.defineProperty(window, 'indexedDB', {
+          value: mockIndexedDB,
+          writable: true,
+          configurable: true,
+        });
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        globalThis.indexedDB = mockIndexedDB;
+        try {
+          (global as any).indexedDB = mockIndexedDB;
+        } catch {}
+      } catch {}
+    }
+
     wrapper = new IndexedDBWrapper('TestDB', 1);
 
     // Setup default mock behaviors
@@ -76,6 +119,19 @@ describe('IndexedDBWrapper', () => {
     });
 
     mockIDBDatabase.transaction.mockReturnValue(mockIDBTransaction);
+    // Ensure createObjectStore returns our object store mock so calls to
+    // `store.createIndex` succeed during onupgradeneeded.
+    mockIDBDatabase.createObjectStore.mockImplementation(() => mockIDBObjectStore);
+
+    // Restore navigator.storage mock in case a test mutated it
+    try {
+      Object.defineProperty(navigator, 'storage', {
+        value: {
+          estimate: vi.fn().mockResolvedValue({ usage: 1024 * 1024, quota: 100 * 1024 * 1024 }),
+        },
+        writable: true,
+      });
+    } catch {}
   });
 
   afterEach(() => {
@@ -280,16 +336,20 @@ describe('IndexedDBWrapper', () => {
         const request = { ...mockIDBRequest };
         let index = 0;
 
-        const mockCursor = {
-          value: null,
+        const mockCursor: any = {
+          value: null as any,
           continue: vi.fn(() => {
             setTimeout(() => {
               index++;
               if (index < testData.length) {
                 mockCursor.value = testData[index];
-                if (request.onsuccess) request.onsuccess({ target: { result: mockCursor } });
+                // Ensure the request.result points at an object with `result`
+                // referencing the cursor so the implementation reads it.
+                request.result = mockCursor;
+                if (request.onsuccess) request.onsuccess({ target: request });
               } else {
-                if (request.onsuccess) request.onsuccess({ target: { result: null } });
+                request.result = null;
+                if (request.onsuccess) request.onsuccess({ target: request });
               }
             }, 0);
           }),
@@ -298,9 +358,11 @@ describe('IndexedDBWrapper', () => {
         setTimeout(() => {
           if (testData.length > 0) {
             mockCursor.value = testData[0];
-            if (request.onsuccess) request.onsuccess({ target: { result: mockCursor } });
+            request.result = mockCursor;
+            if (request.onsuccess) request.onsuccess({ target: request });
           } else {
-            if (request.onsuccess) request.onsuccess({ target: { result: null } });
+            request.result = null;
+            if (request.onsuccess) request.onsuccess({ target: request });
           }
         }, 0);
 
@@ -325,16 +387,18 @@ describe('IndexedDBWrapper', () => {
         const request = { ...mockIDBRequest };
         let index = 0;
 
-        const mockCursor = {
-          value: null,
+        const mockCursor: any = {
+          value: null as any,
           continue: vi.fn(() => {
             setTimeout(() => {
               index++;
               if (index < testData.length) {
                 mockCursor.value = testData[index];
-                if (request.onsuccess) request.onsuccess({ target: { result: mockCursor } });
+                request.result = mockCursor;
+                if (request.onsuccess) request.onsuccess({ target: request });
               } else {
-                if (request.onsuccess) request.onsuccess({ target: { result: null } });
+                request.result = null;
+                if (request.onsuccess) request.onsuccess({ target: request });
               }
             }, 0);
           }),
@@ -343,9 +407,11 @@ describe('IndexedDBWrapper', () => {
         setTimeout(() => {
           if (testData.length > 0) {
             mockCursor.value = testData[0];
-            if (request.onsuccess) request.onsuccess({ target: { result: mockCursor } });
+            request.result = mockCursor;
+            if (request.onsuccess) request.onsuccess({ target: request });
           } else {
-            if (request.onsuccess) request.onsuccess({ target: { result: null } });
+            request.result = null;
+            if (request.onsuccess) request.onsuccess({ target: request });
           }
         }, 0);
 

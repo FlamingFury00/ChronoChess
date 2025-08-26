@@ -1,0 +1,14 @@
+[build]
+  # Netlify build command and publish folder for a Vite + React + TS app
+  command = "npm run build"
+  publish = "dist"
+
+  # If you use Netlify Functions, set the directory here (optional)
+  # functions = "netlify/functions"
+
+[[redirects]]
+  # Redirect all requests to index.html for client-side routing (SPA)
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = true

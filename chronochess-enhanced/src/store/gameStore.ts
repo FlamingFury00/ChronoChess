@@ -259,6 +259,12 @@ const resourceManager = new ResourceManager();
 const pieceEvolutionSystem = new PieceEvolutionSystem();
 const evolutionTreeSystem = new EvolutionTreeSystem();
 const chessEngine = new ChessEngine();
+// Expose engine globally for other subsystems (renderer, tests) to query piece evolution info
+try {
+  (globalThis as any).chronoChessEngine = chessEngine;
+} catch (err) {
+  // ignore in constrained environments
+}
 // Use the simple sound player for basic audio effects
 
 export const useGameStore = create<GameStore>()(
@@ -319,39 +325,78 @@ export const useGameStore = create<GameStore>()(
         // Make the move using ChessEngine
         const result = chessEngine.makeMove(move.from, move.to, move.promotion);
         if (result.success && result.move) {
-          // Update game state
-          const newGameState = chessEngine.getGameState();
-          set({
-            game: newGameState,
-            undoStack: newUndoStack,
-            redoStack: [],
-          });
+          // Update game state (defensive: chessEngine.getGameState may throw if a king was captured)
+          try {
+            const newGameState = chessEngine.getGameState();
+            set({
+              game: newGameState,
+              undoStack: newUndoStack,
+              redoStack: [],
+            });
 
-          // Add move to history
-          get().addMoveToHistory(result.move);
+            // Add move to history
+            get().addMoveToHistory(result.move);
 
-          // Play sound effects
-          const state = get();
-          if (state.settings.soundEnabled) {
-            if (result.move.flags?.includes('c')) {
-              simpleSoundPlayer.playSound('capture');
-            } else {
-              simpleSoundPlayer.playSound('move');
+            // Play sound effects
+            const state = get();
+            if (state.settings.soundEnabled) {
+              if (result.move.flags?.includes('c')) {
+                simpleSoundPlayer.playSound('capture');
+              } else {
+                simpleSoundPlayer.playSound('move');
+              }
             }
-          }
 
-          // Award resources for the move
-          if (result.eleganceScore && result.eleganceScore > 0) {
-            const resourceGains = {
-              temporalEssence: Math.floor(result.eleganceScore * 0.1),
-              mnemonicDust: result.move.flags?.includes('c') ? 1 : 0, // 'c' flag indicates capture
-            };
-            get().awardResources(resourceGains);
-          }
+            // Award resources for the move
+            if (result.eleganceScore && result.eleganceScore > 0) {
+              const resourceGains = {
+                temporalEssence: Math.floor(result.eleganceScore * 0.1),
+                mnemonicDust: result.move.flags?.includes('c') ? 1 : 0,
+              };
+              get().awardResources(resourceGains);
+            }
 
-          // Trigger auto-save if enabled
-          if (state.settings.autoSave) {
-            setTimeout(() => get().saveToStorage(), 100);
+            // Trigger auto-save if enabled
+            if (state.settings.autoSave) {
+              setTimeout(() => get().saveToStorage(), 100);
+            }
+          } catch (errAny) {
+            const err: any = errAny;
+            // If engine threw because a king is missing, mark game over and end manual game if active
+            const msg = (err && (err.message || String(err))) || String(err);
+            const lower = String(msg).toLowerCase();
+            if (lower.includes('missing white king') || lower.includes('missing black king')) {
+              const whiteMissing = lower.includes('missing white king');
+              const victory = whiteMissing ? false : true; // white missing => player lost
+              console.warn('♚ King missing detected after move - marking game over:', msg);
+
+              set({
+                game: {
+                  ...get().game,
+                  gameOver: true,
+                },
+                undoStack: newUndoStack,
+                redoStack: [],
+              });
+
+              if (get().isManualGameActive) {
+                setTimeout(() => get().endManualGame(victory), 100);
+              }
+            } else {
+              // Unexpected error: rethrow or log and conservatively mark game over
+              console.error('Error while updating game state after move:', errAny);
+              set({
+                game: {
+                  ...get().game,
+                  gameOver: true,
+                },
+                undoStack: newUndoStack,
+                redoStack: [],
+              });
+              if (get().isManualGameActive) {
+                setTimeout(() => get().endManualGame(false), 100);
+              }
+            }
           }
         }
       },
@@ -683,6 +728,17 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       saveToStorage: (key = DEFAULT_SAVE_KEY) => {
         try {
           const saveData = get().serialize();
+
+          // Defensive: localStorage may not be available in some test or server
+          // environments. Guard against ReferenceError and silently skip saving
+          // when it's not present so background timers don't cause test failures.
+          if (typeof localStorage === 'undefined' || localStorage === null) {
+            console.warn(
+              'localStorage is not available in this environment; skipping saveToStorage'
+            );
+            return;
+          }
+
           localStorage.setItem(key, JSON.stringify(saveData));
           console.log('💾 Save data written to localStorage:', {
             version: saveData.version,
@@ -705,6 +761,14 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
       loadFromStorage: (key = DEFAULT_SAVE_KEY): boolean => {
         try {
+          // Defensive: localStorage may not exist in some environments (node/jest).
+          if (typeof localStorage === 'undefined' || localStorage === null) {
+            console.warn(
+              'localStorage is not available in this environment; loadFromStorage skipped'
+            );
+            return false;
+          }
+
           const savedData = localStorage.getItem(key);
           if (!savedData) {
             console.log('📎 No save data found in localStorage');
@@ -1130,7 +1194,10 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             totalEncounters: state.soloModeStats.totalEncounters + 1,
           },
           autoBattleSystem,
-          gameLog: ['New Encounter: Temporal Nexus', 'Echoes intensify! Control the flow of time!'],
+          gameLog: [
+            'New Encounter: Temporal Nexus',
+            'Temporal disturbances intensify! Control the flow of time!',
+          ],
         }));
 
         // Start the encounter
@@ -2049,8 +2116,32 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               }
             }
 
-            // Update game state immediately
-            const newGameState = chessEngine.getGameState();
+            // Update game state immediately (defensive)
+            let newGameState;
+            try {
+              newGameState = chessEngine.getGameState();
+            } catch (errAny) {
+              const err: any = errAny;
+              const msg = (err && (err.message || String(err))) || String(err);
+              const lower = String(msg).toLowerCase();
+              if (lower.includes('missing white king') || lower.includes('missing black king')) {
+                const whiteMissing = lower.includes('missing white king');
+                const victory = whiteMissing ? false : true;
+                console.warn('♚ King missing detected after manual move - ending game:', msg);
+                set({
+                  game: { ...get().game, gameOver: true },
+                });
+                if (get().isManualGameActive) {
+                  setTimeout(() => get().endManualGame(victory), 100);
+                }
+                return true;
+              }
+
+              console.error('Error getting game state after manual move:', err);
+              set({ game: { ...get().game, gameOver: true } });
+              if (get().isManualGameActive) setTimeout(() => get().endManualGame(false), 100);
+              return false;
+            }
             console.log(
               `🔄 Updating game state. Old turn: ${state.game.turn}, New turn: ${newGameState.turn}`
             );
@@ -2893,7 +2984,7 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
         // **CRITICAL: Get evolution data from chess engine piece evolution system**
         const pieceEvolution = chessEngine.getPieceEvolution(square as any);
-        const pieceState = state.manualModePieceStates[square];
+        let pieceState = state.manualModePieceStates[square];
 
         console.log(`🔍 Getting enhanced moves for ${piece.type} at ${square}:`, {
           evolutionLevel: pieceEvolution?.evolutionLevel || 0,
@@ -4013,10 +4104,22 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         // Apply resource cost
         set({ resources: { ...state.resources, ...resourceChanges } });
 
-        // Unlock the evolution
+        // Unlock the evolution in store and also in the centralized EvolutionTreeSystem
         const newUnlockedEvolutions = new Set(state.unlockedEvolutions);
         newUnlockedEvolutions.add(evolutionId);
         set({ unlockedEvolutions: newUnlockedEvolutions });
+
+        // Keep EvolutionTreeSystem internal unlocks in sync so engine queries (which use that
+        // system) see the same unlocked abilities. This prevents mismatches between store
+        // unlockedEvolutions and the EvolutionTreeSystem.playerUnlocks set.
+        try {
+          const ets = state.evolutionTreeSystem;
+          if (ets && typeof ets.unlockEvolution === 'function') {
+            ets.unlockEvolution(evolutionId);
+          }
+        } catch (err) {
+          console.warn('Failed to sync unlock with EvolutionTreeSystem:', err);
+        }
 
         // Apply gameplay effects immediately
         get().applyEvolutionEffects();
@@ -4071,66 +4174,123 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       applyEvolutionToChessEngine: (evolution: any) => {
         console.log(`🎯 Applying evolution ${evolution.name} to chess engine`);
 
-        // **CRITICAL: Force chess engine to sync with current evolution state**
+        // Force chess engine to sync with current evolution state before changes
         chessEngine.syncPieceEvolutionsWithBoard();
 
-        // For each piece of the evolution's type, update its capabilities
-        evolution.effects.forEach((effect: any) => {
-          if (effect.type === 'ability') {
-            // Create ability for chess engine
-            const pieceAbility = {
-              id: effect.target,
-              name: evolution.name,
-              type: effect.abilityType || 'special',
-              description: evolution.description,
-              conditions: evolution.requirements || [],
-            };
+        // Helper to apply attribute effects to the pieceEvolutionRef stored in the engine
+        const applyAttributeToEngine = (
+          square: string,
+          target: string,
+          value: any,
+          operation: string
+        ) => {
+          const pe = chessEngine.getPieceEvolution(square as any);
+          if (!pe) return;
 
-            // Apply to all pieces of this type on the board
-            const gameState = chessEngine.getGameState();
-            if (!gameState.fen) {
-              console.warn('Invalid game state, skipping piece ability application');
-              return;
-            }
+          // Map common evolution attribute names to engine per-piece fields
+          const mapping: Record<string, string> = {
+            moveRange: 'moveRange',
+            moveSpeed: 'moveSpeed',
+            attackPower: 'captureBonus', // map attackPower to captureBonus multiplier
+            defense: 'defensiveBonus',
+            consecrationTurns: 'consecrationTurns',
+            snipeRange: 'snipeRange',
+            dashChance: 'dashChance',
+            dashCooldown: 'dashCooldown',
+            entrenchPower: 'entrenchPower',
+            entrenchThreshold: 'entrenchThreshold',
+            dominanceAuraRange: 'dominanceRadius',
+            manaRegenBonus: 'manaRegenBonus',
+            royalDecreeUses: 'royalDecreeUses',
+            lastStandThreshold: 'lastStandThreshold',
+            marchSpeed: 'marchSpeed',
+            resilience: 'resilience',
+            synergyRadius: 'synergyRadius',
+          };
 
-            for (let file = 0; file < 8; file++) {
-              for (let rank = 0; rank < 8; rank++) {
-                const square = String.fromCharCode(97 + file) + (rank + 1);
+          const field = mapping[target] || target;
 
-                // Check if there's a piece of the correct type at this square
-                try {
-                  const piece = chessEngine.chess.get(square as any);
-                  if (piece && piece.type === evolution.pieceType) {
-                    // Create or update piece evolution reference
-                    const existingEvolution = chessEngine.getPieceEvolution(square);
-                    const pieceEvolutionRef = existingEvolution || {
-                      pieceType: piece.type,
-                      square,
-                      evolutionLevel: 1,
-                      abilities: [],
-                    };
+          // Initialize numeric fields if missing
+          if (typeof (pe as any)[field] === 'undefined') (pe as any)[field] = 0;
 
-                    // Add the new ability
-                    if (!pieceEvolutionRef.abilities.some(a => a.id === pieceAbility.id)) {
-                      pieceEvolutionRef.abilities.push(pieceAbility);
-                      pieceEvolutionRef.evolutionLevel += 1;
-                    }
+          if (operation === 'add') {
+            (pe as any)[field] =
+              (pe as any)[field] + (typeof value === 'number' ? value : Number(value));
+          } else if (operation === 'multiply') {
+            (pe as any)[field] =
+              (pe as any)[field] * (typeof value === 'number' ? value : Number(value));
+          } else if (operation === 'set') {
+            (pe as any)[field] = value;
+          }
 
-                    // Update the chess engine
-                    chessEngine.setPieceEvolution(square, pieceEvolutionRef);
-                    console.log(
-                      `🔧 Applied ability '${pieceAbility.name}' to ${piece.type} at ${square}`
-                    );
+          // Write back to engine
+          chessEngine.setPieceEvolution(square as any, pe);
+        };
+
+        // For each effect, apply to all pieces of the evolution's type on the board
+        const gameState = chessEngine.getGameState();
+        if (!gameState.fen) {
+          console.warn('Invalid game state, skipping piece evolution application');
+          return;
+        }
+
+        for (let file = 0; file < 8; file++) {
+          for (let rank = 0; rank < 8; rank++) {
+            const square = String.fromCharCode(97 + file) + (rank + 1);
+
+            try {
+              const piece = chessEngine.chess.get(square as any);
+              if (!piece || piece.type !== evolution.pieceType) continue;
+
+              // Ensure there's a pieceEvolutionRef for this square and use a local any-typed ref
+              let pieceEvolutionRef = chessEngine.getPieceEvolution(square as any);
+              const peRef: any = pieceEvolutionRef || {
+                pieceType: piece.type,
+                square,
+                evolutionLevel: 1,
+                abilities: [],
+              };
+
+              evolution.effects.forEach((effect: any) => {
+                if (effect.type === 'ability') {
+                  const pieceAbility = {
+                    id: effect.target,
+                    name: evolution.name,
+                    type: effect.abilityType || 'special',
+                    description: evolution.description,
+                    conditions: evolution.requirements || [],
+                    cooldown: effect.cooldown || 0,
+                  };
+
+                  if (!Array.isArray(peRef.abilities)) peRef.abilities = [];
+                  if (!peRef.abilities.some((a: any) => a.id === pieceAbility.id)) {
+                    peRef.abilities.push(pieceAbility);
+                    peRef.evolutionLevel = (peRef.evolutionLevel || 1) + 1;
                   }
-                } catch {
-                  // Square might be empty, continue
                 }
-              }
+
+                if (effect.type === 'attribute') {
+                  // Apply attribute effect directly to engine pieceEvolution
+                  applyAttributeToEngine(square, effect.target, effect.value, effect.operation);
+                }
+
+                if (effect.type === 'visual') {
+                  // Store visual modifications on pieceEvolutionRef so renderer can pick them up
+                  peRef.visualModifications = peRef.visualModifications || [];
+                  peRef.visualModifications.push(effect.value);
+                }
+              });
+
+              // Persist the updated pieceEvolutionRef back into the engine (cast to any to satisfy TS)
+              chessEngine.setPieceEvolution(square as any, peRef as any);
+              console.log(`🔧 Applied evolution '${evolution.name}' to ${piece.type} at ${square}`);
+            } catch (err) {
+              // ignore empty squares or engine errors for individual squares
             }
           }
-        });
+        }
 
-        // **ENHANCED: Force synchronization after applying evolution**
+        // Force synchronization after applying evolution
         console.log('🔄 Forcing chess engine synchronization with evolution state');
         chessEngine.syncPieceEvolutionsWithBoard();
       },

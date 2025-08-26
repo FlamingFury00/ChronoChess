@@ -116,7 +116,7 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
             <div className="menu-scene__theme-controls">
               <ThemeToggle variant="switch" size="small" showLabel={false} />
             </div>
-            <p className="menu-scene__version">ChronoChess Enhanced v1.0</p>
+            <p className="menu-scene__version">ChronoChess v1.0</p>
           </div>
         </footer>
       </div>

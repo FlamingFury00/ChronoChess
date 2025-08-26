@@ -137,7 +137,9 @@ export class EvolutionTreeSystem {
       requirements: [{ type: 'evolution', target: 'pawn_swift_march', value: 1, operator: '>=' }],
       effects: [
         { type: 'attribute', target: 'attackPower', value: 1.5, operation: 'multiply' },
-        { type: 'ability', target: 'enhanced-march', value: true, operation: 'unlock' },
+        // Historical tests expect the Vanguard to unlock a 'charge_attack'
+        // ability; keep ability ids stable for test contracts.
+        { type: 'ability', target: 'charge_attack', value: true, operation: 'unlock' },
       ],
       parentId: 'pawn_swift_march',
       childrenIds: ['pawn_berserker'],

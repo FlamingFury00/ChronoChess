@@ -26,6 +26,16 @@ describe('SoundLibrary', () => {
 
   beforeEach(() => {
     soundLibrary = new SoundLibrary();
+    // Restore the default getAudioContext implementation for each test so a
+    // previous test's mockRejectedValue doesn't leak into the next test.
+    (audioManager.getAudioContext as any).mockResolvedValue({
+      sampleRate: 44100,
+      createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => ({
+        getChannelData: vi.fn(() => new Float32Array(length)),
+      })),
+    });
+
+    // Clear call history but preserve implementations
     vi.clearAllMocks();
   });
 
@@ -57,6 +67,10 @@ describe('SoundLibrary', () => {
   describe('sound effect retrieval', () => {
     beforeEach(async () => {
       await soundLibrary.initialize();
+      // Clear the full library so tests in this suite can inject a small,
+      // controlled set of sound effects without interference from the
+      // procedurally generated sounds created during initialization.
+      (soundLibrary as any).soundEffects.clear();
     });
 
     it('should retrieve sound effects by ID', () => {
