@@ -34,9 +34,10 @@ function App() {
   // prevents the bottom nav from being pushed off-screen.
   useEffect(() => {
     const setAppHeight = () => {
-      const h = window.visualViewport && window.visualViewport.height
-        ? Math.max(window.visualViewport.height, window.innerHeight)
-        : window.innerHeight || document.documentElement.clientHeight;
+      const h =
+        window.visualViewport && window.visualViewport.height
+          ? Math.max(window.visualViewport.height, window.innerHeight)
+          : window.innerHeight || document.documentElement.clientHeight;
       document.documentElement.style.setProperty('--app-height', `${Math.round(h)}px`);
     };
 
