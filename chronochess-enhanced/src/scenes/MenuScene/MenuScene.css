@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: hidden; /* keep desktop behavior to avoid visible shifting */
 
   /* Sophisticated background gradient */
   background:
@@ -57,6 +57,57 @@
     120px 120px,
     160px 160px;
   animation: particles-float var(--duration-slowest) linear infinite;
+  will-change: transform, opacity; /* hint to compositor to reduce repaint jank */
+}
+
+/* Reduce or hide heavy visual layers on small screens for performance & readability */
+@media (max-width: 768px) {
+  .menu-scene {
+    width: 100%;
+    min-height: 100dvh; /* dynamic viewport on mobile */
+    display: flex;
+    align-items: flex-start; /* allow content to start at top so title is visible */
+    justify-content: flex-start;
+    overflow: visible; /* Let inner content scroll when necessary */
+    box-sizing: border-box;
+
+    /* Respect safe area insets on mobile devices */
+    padding-top: calc(var(--spacing-md) + env(safe-area-inset-top));
+    padding-bottom: calc(var(--spacing-md) + env(safe-area-inset-bottom));
+  }
+
+  .menu-scene__particles {
+    display: none; /* hide particle layer on smaller devices to improve readability */
+  }
+
+  .menu-scene__content {
+    width: calc(100% - (var(--spacing-md) * 2));
+    margin: var(--spacing-sm) auto;
+    padding: var(--spacing-md);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Slightly reduce title and subtitle to keep everything on screen */
+  .menu-scene__title {
+    font-size: clamp(1.6rem, 7.5vw, 2.6rem);
+    line-height: 1.05;
+    margin-bottom: var(--spacing-xs);
+  }
+
+  .menu-scene__subtitle {
+    font-size: 0.95rem;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .menu-scene__nav {
+    gap: var(--spacing-sm);
+  }
+
+  .menu-scene__nav-button-content {
+    padding: 0.6rem;
+    gap: var(--spacing-sm);
+  }
 }
 
 @keyframes particles-float {

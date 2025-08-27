@@ -24,7 +24,12 @@
   z-index: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain; /* prevent scroll chaining and elastic blank space */
 }
+
+/* Spacer element to reserve space for the bottom navigation. Script sets --bottom-nav-height dynamically. */
+/* spacer removed — padding is applied dynamically only when necessary */
 
 /* Mobile navigation - hidden by default */
 .app__mobile-nav {
@@ -36,8 +41,9 @@
     display: block;
   }
 
+  /* Reserve space for the bottom navigation using the navigation's CSS variable; fallback to 80px */
   .app__content {
-    padding-bottom: 80px; /* Space for bottom navigation */
+    padding-bottom: max(var(--bottom-nav-height, 80px), 80px);
   }
 }
 

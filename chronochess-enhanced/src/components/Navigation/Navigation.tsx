@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../../store';
 import { ThemeToggle } from '../ThemeToggle';
 import type { SceneType } from '../../scenes/types';
@@ -26,12 +26,12 @@ const Navigation: React.FC<NavigationProps> = ({
   onSceneChange,
   variant = 'header',
   showBreadcrumbs = false,
-  showBackButton = false,
   className = '',
 }) => {
   const { resources, getSoloModeStats } = useGameStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const [animatingTo, setAnimatingTo] = useState<SceneType | null>(null);
+  const [isHidden, setIsHidden] = useState(false);
   const stats = getSoloModeStats();
 
   // Navigation items with dynamic badges
@@ -90,13 +90,7 @@ const Navigation: React.FC<NavigationProps> = ({
     }, 150);
   };
 
-  const handleBackNavigation = () => {
-    const hierarchy = sceneHierarchy[currentScene];
-    if (hierarchy.length > 0) {
-      const parentScene = hierarchy[hierarchy.length - 1];
-      handleNavigation(parentScene);
-    }
-  };
+  // Back navigation handled by page-level "Back to Menu" controls now
 
   const getBreadcrumbs = () => {
     const hierarchy = sceneHierarchy[currentScene];
@@ -108,10 +102,14 @@ const Navigation: React.FC<NavigationProps> = ({
     'navigation',
     `navigation--${variant}`,
     isExpanded && 'navigation--expanded',
+    variant === 'bottom' && isHidden && 'navigation--hidden',
     className,
   ]
     .filter(Boolean)
     .join(' ');
+
+  // Ref for the nav element so we can measure it and expose its height as a CSS variable
+  const navRef = useRef<HTMLElement | null>(null);
 
   const renderNavItem = (item: NavItem, index: number) => {
     const isActive = item.id === currentScene;
@@ -188,25 +186,24 @@ const Navigation: React.FC<NavigationProps> = ({
   };
 
   const renderBackButton = () => {
-    if (!showBackButton) return null;
+    return null; // Back button removed — pages include their own "Back to Menu"
+  };
 
-    const hierarchy = sceneHierarchy[currentScene];
-    if (hierarchy.length === 0) return null;
-
-    const parentScene = hierarchy[hierarchy.length - 1];
-    const parentItem = navItems.find(item => item.id === parentScene);
-
+  // Condensed header for small screens: left back, center title, right actions
+  const renderCondensedHeader = () => {
+    const currentItem = navItems.find(item => item.id === currentScene);
     return (
-      <button
-        onClick={handleBackNavigation}
-        className="navigation__back-button"
-        aria-label={`Go back to ${parentItem?.label || 'previous page'}`}
-      >
-        <span className="navigation__back-icon" aria-hidden="true">
-          ←
-        </span>
-        <span className="navigation__back-label">Back</span>
-      </button>
+      <div className="navigation__condensed">
+        <div className="navigation__condensed-left" />
+
+        <div className="navigation__condensed-title" aria-hidden={false}>
+          {currentItem ? currentItem.label : 'ChronoChess'}
+        </div>
+
+        <div className="navigation__condensed-actions">
+          <ThemeToggle variant="button" size="small" />
+        </div>
+      </div>
     );
   };
 
@@ -244,6 +241,146 @@ const Navigation: React.FC<NavigationProps> = ({
     }
   }, [isExpanded]);
 
+  useEffect(() => {
+    if (variant !== 'bottom') return;
+
+    // Use refs to persist values across event handlers without re-registering
+    const scroller = document.querySelector('.app__content') as HTMLElement | null;
+    const lastScrollRef = { value: scroller ? scroller.scrollTop : window.scrollY || 0 };
+    const lastTouchRef = { value: 0 };
+    let raf = 0;
+
+    const threshold = 2; // px movement to consider (very small so hide happens immediately)
+
+    const handleHideDecision = (delta: number) => {
+      // Immediate hide on any meaningful downward movement; reveal on upward movement
+      if (delta > threshold) {
+        setIsHidden(true);
+      } else if (delta < -threshold) {
+        setIsHidden(false);
+      }
+      // otherwise ignore tiny movements
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      const delta = e.deltaY;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        handleHideDecision(delta);
+        raf = 0;
+      });
+    };
+
+    const onScrollerScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        const current = scroller
+          ? scroller.scrollTop
+          : window.scrollY || document.documentElement.scrollTop || 0;
+        const delta = current - lastScrollRef.value;
+        handleHideDecision(delta);
+        lastScrollRef.value = current;
+        raf = 0;
+      });
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      lastTouchRef.value = e.touches[0]?.clientY || 0;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const cur = e.touches[0]?.clientY || 0;
+      const delta = lastTouchRef.value - cur; // positive when finger moved up -> page scroll down
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        handleHideDecision(delta);
+        lastTouchRef.value = cur;
+        raf = 0;
+      });
+    };
+
+    const wheelTarget = scroller || window;
+    const scrollTarget = scroller || window;
+
+    wheelTarget.addEventListener(
+      'wheel',
+      onWheel as EventListener,
+      { passive: true } as AddEventListenerOptions
+    );
+    scrollTarget.addEventListener(
+      'scroll',
+      onScrollerScroll as EventListener,
+      { passive: true } as AddEventListenerOptions
+    );
+    const touchTarget = scroller || document;
+    touchTarget.addEventListener(
+      'touchstart',
+      onTouchStart as EventListener,
+      { passive: true } as AddEventListenerOptions
+    );
+    touchTarget.addEventListener(
+      'touchmove',
+      onTouchMove as EventListener,
+      { passive: true } as AddEventListenerOptions
+    );
+
+    return () => {
+      wheelTarget.removeEventListener('wheel', onWheel as EventListener);
+      scrollTarget.removeEventListener('scroll', onScrollerScroll as EventListener);
+      touchTarget.removeEventListener('touchstart', onTouchStart as EventListener);
+      touchTarget.removeEventListener('touchmove', onTouchMove as EventListener);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [variant]);
+
+  // Measure the actual nav height and set CSS variable so content can reserve space
+  useEffect(() => {
+    if (variant !== 'bottom') return;
+    const el = navRef.current;
+    if (!el || typeof document === 'undefined') return;
+
+    const setNavHeight = () => {
+      // Use offsetHeight to include padding and border; round up to avoid clipping
+      const measured = Math.ceil(el.getBoundingClientRect().height || el.offsetHeight || 0);
+      const safetyBuffer = 12; // extra pixels to avoid device-specific clipping
+      const height = measured + safetyBuffer;
+
+      // Set CSS variable for layouts that use it
+      document.documentElement.style.setProperty('--bottom-nav-height', `${height}px`);
+
+      // Also directly apply padding to the main scroll container to be robust across layouts
+      const scroller = document.querySelector('.app__content') as HTMLElement | null;
+      if (scroller) {
+        // Only set if the computed value is larger than current padding-bottom
+        const current = parseFloat(getComputedStyle(scroller).paddingBottom || '0');
+        if (height > current) scroller.style.paddingBottom = `${height}px`;
+      }
+    };
+
+    // Initial measure
+    setNavHeight();
+
+    // Watch for size changes
+    const ro = new ResizeObserver(() => setNavHeight());
+    ro.observe(el);
+
+    // Also update on window resize and orientation change
+    window.addEventListener('resize', setNavHeight, { passive: true });
+    window.addEventListener('orientationchange', setNavHeight);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', setNavHeight as EventListener);
+      window.removeEventListener('orientationchange', setNavHeight as EventListener);
+
+      // cleanup: remove the inline padding if we set it
+      const scroller = document.querySelector('.app__content') as HTMLElement | null;
+      if (scroller) {
+        scroller.style.paddingBottom = '';
+      }
+    };
+  }, [variant, navRef]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -260,7 +397,15 @@ const Navigation: React.FC<NavigationProps> = ({
     <>
       {variant === 'sidebar' && renderMobileToggle()}
 
-      <nav className={navigationClass} role="navigation" aria-label="Main navigation">
+      <nav
+        ref={navRef as any}
+        className={navigationClass}
+        role="navigation"
+        aria-label="Main navigation"
+      >
+        {/* Condensed header shown on small screens */}
+        {renderCondensedHeader()}
+
         {renderBreadcrumbs()}
         {renderBackButton()}
 

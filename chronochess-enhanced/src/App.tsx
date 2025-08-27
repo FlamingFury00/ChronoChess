@@ -4,6 +4,7 @@ import { Navigation } from './components/Navigation';
 import { MenuScene, SoloModeScene, EvolutionScene, SettingsScene } from './scenes';
 import type { SceneType } from './scenes';
 import './App.css';
+import './index.css';
 
 function App() {
   const { ui, setCurrentScene, startResourceGeneration } = useGameStore();
@@ -27,6 +28,8 @@ function App() {
       store.stopResourceGeneration();
     };
   }, [startResourceGeneration]);
+
+  // Rubber-band touch guard removed — rely on CSS `overscroll-behavior` instead to avoid blocking in-page scroll.
 
   const handleSceneChange = (scene: SceneType) => {
     setCurrentScene(scene);
