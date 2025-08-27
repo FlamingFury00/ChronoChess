@@ -333,7 +333,8 @@ textarea,
 
 #root {
   width: 100vw;
-  min-height: 100vh;
+  /* Use visual viewport height to avoid mobile browser UI shifting content */
+  min-height: var(--app-height, 100vh);
   position: relative;
   overflow-x: hidden;
   background: linear-gradient(
@@ -346,7 +347,7 @@ textarea,
 
 @media (max-width: 768px) {
   #root {
-    height: auto;
+    height: var(--app-height, auto);
   }
 }
 

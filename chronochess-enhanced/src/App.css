@@ -1,7 +1,6 @@
 .app {
   position: relative;
   width: 100vw;
-  min-height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -15,6 +14,7 @@
 
   /* Scene transition container */
   transition: all var(--duration-normal) var(--ease-out);
+  min-height: var(--app-height, 100vh);
 }
 
 /* Main content area */
@@ -105,14 +105,21 @@
 /* Enhanced responsive design */
 @media (max-width: 768px) {
   .app {
-    height: 100vh;
+    /* follow visual viewport height to avoid browser chrome pushing content */
+    height: var(--app-height, 100vh);
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
+  }
 
-    /* Optimize for mobile performance */
-    transform: translateZ(0);
-    will-change: transform;
+  /* Show mobile nav container */
+  .app__mobile-nav {
+    display: block;
+  }
+
+  /* Reserve space for the bottom navigation using the navigation's CSS variable; fallback to 80px */
+  .app__content {
+    padding-bottom: var(--bottom-nav-height, 80px);
   }
 
   .app::before {
@@ -133,11 +140,7 @@
 
 /* High DPI displays optimization */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
-  .app {
-    /* Ensure crisp rendering on retina displays */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-  }
+  /* High DPI rendering tweaks could go here if needed */
 }
 
 /* Reduced motion support */

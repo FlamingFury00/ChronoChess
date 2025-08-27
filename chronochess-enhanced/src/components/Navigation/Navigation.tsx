@@ -347,14 +347,6 @@ const Navigation: React.FC<NavigationProps> = ({
 
       // Set CSS variable for layouts that use it
       document.documentElement.style.setProperty('--bottom-nav-height', `${height}px`);
-
-      // Also directly apply padding to the main scroll container to be robust across layouts
-      const scroller = document.querySelector('.app__content') as HTMLElement | null;
-      if (scroller) {
-        // Only set if the computed value is larger than current padding-bottom
-        const current = parseFloat(getComputedStyle(scroller).paddingBottom || '0');
-        if (height > current) scroller.style.paddingBottom = `${height}px`;
-      }
     };
 
     // Initial measure

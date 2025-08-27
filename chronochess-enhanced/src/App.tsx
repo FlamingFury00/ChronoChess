@@ -29,6 +29,38 @@ function App() {
     };
   }, [startResourceGeneration]);
 
+  // Set a live CSS variable for the app height using visualViewport / innerHeight.
+  // This mitigates mobile browser UI (address/toolbars) changing the visible area and
+  // prevents the bottom nav from being pushed off-screen.
+  useEffect(() => {
+    const setAppHeight = () => {
+      const h = window.visualViewport && window.visualViewport.height
+        ? Math.max(window.visualViewport.height, window.innerHeight)
+        : window.innerHeight || document.documentElement.clientHeight;
+      document.documentElement.style.setProperty('--app-height', `${Math.round(h)}px`);
+    };
+
+    // Initial set
+    setAppHeight();
+
+    // Listen to resize/orientation and visualViewport changes where available
+    window.addEventListener('resize', setAppHeight, { passive: true });
+    window.addEventListener('orientationchange', setAppHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setAppHeight);
+      window.visualViewport.addEventListener('scroll', setAppHeight);
+    }
+
+    return () => {
+      window.removeEventListener('resize', setAppHeight as EventListener);
+      window.removeEventListener('orientationchange', setAppHeight as EventListener);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', setAppHeight as EventListener);
+        window.visualViewport.removeEventListener('scroll', setAppHeight as EventListener);
+      }
+    };
+  }, []);
+
   // Rubber-band touch guard removed — rely on CSS `overscroll-behavior` instead to avoid blocking in-page scroll.
 
   const handleSceneChange = (scene: SceneType) => {

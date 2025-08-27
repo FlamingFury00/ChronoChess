@@ -142,6 +142,7 @@
 /* === BOTTOM VARIANT === */
 .navigation--bottom {
   position: fixed;
+  /* pinned to viewport bottom; safe-area inset is applied to padding so content stays visible */
   bottom: 0;
   left: 0;
   right: 0;
@@ -153,8 +154,12 @@
   /* Expose a height variable so other parts of the app can reserve space */
   --bottom-nav-height: calc(56px + env(safe-area-inset-bottom)); /* default estimate */
 
-  padding: var(--spacing-sm);
-  padding-bottom: calc(var(--spacing-sm) + env(safe-area-inset-bottom));
+  padding: calc(var(--spacing-xs) + 2px) calc(var(--spacing-sm));
+  /* Apply safe-area inset inside padding so the bar sits above the home indicator */
+  padding-bottom: calc(var(--spacing-xs) + env(safe-area-inset-bottom, 0));
+
+  /* Ensure bar is not taller than expected */
+  box-sizing: border-box;
   box-shadow: 0 -2px 16px var(--shadow-secondary);
   /* Allow smooth hide/show transitions */
   transition:
