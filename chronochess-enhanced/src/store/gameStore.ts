@@ -238,6 +238,10 @@ const initialUIState: UIState = {
   isLoading: false,
 };
 
+// Debounce guard to prevent duplicate rapid selection calls (mobile double-fire/tap issues)
+let _lastSelectSquareForMoveTime = 0;
+const SELECT_DEBOUNCE_MS = 200;
+
 const initialSettings: GameSettings = {
   quality: 'medium',
   soundEnabled: true,
@@ -897,7 +901,7 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         const updateInterval = setInterval(() => {
           const currentResources = resourceManager.getResourceState();
           set({ resources: currentResources });
-        }, 100); // Update UI every 100ms for smooth resource display
+        }, 300); // Update UI every 300ms to reduce update flood while keeping smooth display
 
         // Store interval reference for cleanup
         (globalThis as any).resourceUpdateInterval = updateInterval;
@@ -1887,6 +1891,13 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       },
 
       selectSquareForMove: (square: string | null) => {
+        const now = Date.now();
+        if (now - _lastSelectSquareForMoveTime < SELECT_DEBOUNCE_MS) {
+          // Ignore rapid duplicate calls (common with some touch handlers)
+          return;
+        }
+        _lastSelectSquareForMoveTime = now;
+
         const state = get();
 
         if (!state.isManualGameActive) return;
@@ -2488,7 +2499,10 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                       if (newGameState.gameOver) {
                         let victory = undefined;
                         if (newGameState.inCheckmate) {
-                          victory = newGameState.turn === 'w';
+                          // If checkmate occurred, the side to move (newGameState.turn)
+                          // is the one that was checkmated (i.e. the loser). The player
+                          // is White, so they win when the side to move is Black ('b').
+                          victory = newGameState.turn === 'b';
                         }
                         setTimeout(() => get().endManualGame(victory), 1000);
                       }
@@ -2532,7 +2546,9 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                       if (newGameState.gameOver) {
                         let victory = undefined;
                         if (newGameState.inCheckmate) {
-                          victory = newGameState.turn === 'w';
+                          // Player (white) wins when the side to move after the
+                          // move is black ('b'), meaning black has been checkmated.
+                          victory = newGameState.turn === 'b';
                         }
                         setTimeout(() => get().endManualGame(victory), 1000);
                       }
@@ -2584,7 +2600,7 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                       if (newGameState.gameOver) {
                         let victory = undefined;
                         if (newGameState.inCheckmate) {
-                          victory = newGameState.turn === 'w';
+                          victory = newGameState.turn === 'b';
                         }
                         setTimeout(() => get().endManualGame(victory), 1000);
                       }

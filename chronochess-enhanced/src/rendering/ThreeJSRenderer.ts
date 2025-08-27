@@ -1921,7 +1921,8 @@ export class ThreeJSRenderer {
 
     canvas.addEventListener('click', handleClick);
     // Keep listening for touchend (use changedTouches inside handler) to detect taps reliably
-    canvas.addEventListener('touchend', handleClick, { passive: true });
+    // Use passive: false so preventDefault() can be called inside the handler when needed.
+    canvas.addEventListener('touchend', handleClick, { passive: false });
     // Store the handler so callers can disable/enable it later
     this.canvasTouchHandler = handleClick as (ev: Event) => void;
 

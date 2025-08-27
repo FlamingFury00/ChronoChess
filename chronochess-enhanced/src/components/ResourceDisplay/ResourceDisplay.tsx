@@ -24,25 +24,31 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
   showProgressBars = false,
   className = '',
 }) => {
-  const { resources } = useGameStore();
+  // Subscribe specifically to the `resources` slice so this component
+  // reliably rerenders when resources change across the app.
+  const resources = useGameStore(state => state.resources);
   const [animations, setAnimations] = useState<ResourceAnimation[]>([]);
-  const [previousResources, setPreviousResources] = useState(resources);
+  // Keep a ref to the previous resources snapshot so updates here don't trigger
+  // a rerender — using state for this was causing useEffect to re-run repeatedly.
+  const previousResourcesRef = useRef(resources);
+  // Track timeout IDs so we can clear them if the component unmounts or
+  // if the effect re-runs before timeouts fire.
+  const animationTimeoutsRef = useRef<number[]>([]);
   const animationIdRef = useRef(0);
+  const generationPulseIntervalRef = useRef<number | null>(null);
 
   // Track resource changes and create animations
   useEffect(() => {
     const newAnimations: ResourceAnimation[] = [];
+    const prev = previousResourcesRef.current || {};
 
     Object.entries(resources).forEach(([key, value]) => {
-      if (
-        typeof value === 'number' &&
-        typeof previousResources[key as keyof typeof previousResources] === 'number'
-      ) {
-        const previousValue = previousResources[key as keyof typeof previousResources] as number;
+      if (typeof value === 'number' && typeof prev[key as keyof typeof prev] === 'number') {
+        const previousValue = prev[key as keyof typeof prev] as number;
         const difference = value - previousValue;
 
+        // Animate even small generation ticks so numeric generation is visible.
         if (Math.abs(difference) > 0.01) {
-          // Only animate significant changes
           newAnimations.push({
             id: `${key}-${animationIdRef.current++}`,
             type: difference > 0 ? 'gain' : 'spend',
@@ -55,18 +61,43 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
     });
 
     if (newAnimations.length > 0) {
-      setAnimations(prev => [...prev, ...newAnimations]);
+      setAnimations(prevArr => [...prevArr, ...newAnimations]);
 
       // Remove animations after 2 seconds
-      setTimeout(() => {
-        setAnimations(prev =>
-          prev.filter(anim => !newAnimations.some(newAnim => newAnim.id === anim.id))
+      const timeoutId = window.setTimeout(() => {
+        setAnimations(prevArr =>
+          prevArr.filter(anim => !newAnimations.some(newAnim => newAnim.id === anim.id))
         );
       }, 2000);
+
+      animationTimeoutsRef.current.push(timeoutId as unknown as number);
     }
 
-    setPreviousResources(resources);
-  }, [resources, previousResources]);
+    // Update the ref snapshot — store a shallow clone (including nested maps)
+    // so we compare stable primitive values instead of potentially shared
+    // object references coming from the store. This ensures we detect
+    // numeric changes even if the store re-uses object references.
+    previousResourcesRef.current = {
+      ...resources,
+      generationRates: { ...(resources.generationRates || {}) },
+      bonusMultipliers: { ...(resources.bonusMultipliers || {}) },
+    } as typeof resources;
+    // Only depend on `resources` so this runs when resources change.
+  }, [resources]);
+
+  // Global cleanup on unmount: clear all animation timeouts.
+  useEffect(() => {
+    return () => {
+      animationTimeoutsRef.current.forEach(id => window.clearTimeout(id));
+      animationTimeoutsRef.current = [];
+      if (generationPulseIntervalRef.current != null) {
+        window.clearInterval(generationPulseIntervalRef.current as number);
+        generationPulseIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  // No generation pulse: numeric generation animations come from diffs above.
 
   const formatResourceValue = (value: number): string => {
     if (value >= 1000000) {
@@ -154,6 +185,10 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
                   <span className="resource-display__rate">
                     {formatGenerationRate(effectiveRate)}
                   </span>
+                )}
+                {/* Persistent CSS-only pulse indicator for active generation (decoupled from JS updates) */}
+                {effectiveRate > 0 && (
+                  <span className="resource-display__pulse" aria-hidden="true" />
                 )}
               </div>
 

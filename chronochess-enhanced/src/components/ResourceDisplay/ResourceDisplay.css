@@ -174,6 +174,9 @@
   animation: ratePulse 3s ease-in-out infinite;
 }
 
+/* Persistent pulse indicator for active generation (CSS-only) */
+/* Persistent pulse removed - numeric generation is now the only animation */
+
 @keyframes ratePulse {
   0%,
   100% {
@@ -241,14 +244,14 @@
 /* Modern resource change animations */
 .resource-display__animation {
   position: relative;
-  font-size: var(--font-size-sm);
+  font-size: calc(var(--font-size-sm) * 1.1);
   font-weight: var(--font-weight-semibold);
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
   border-radius: var(--radius-sm);
   padding: var(--spacing-xs) var(--spacing-sm);
 
   /* Enhanced animation */
-  animation: resourceAnimation var(--duration-slowest) var(--ease-out) forwards;
+  animation: resourceAnimation 1600ms var(--ease-out) forwards;
   pointer-events: none;
 
   /* Glass background */
@@ -278,14 +281,14 @@
 @keyframes resourceAnimation {
   0% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1.05);
   }
   20% {
-    transform: translateY(-5px) scale(1.1);
+    transform: translateY(-8px) scale(1.2);
   }
   100% {
     opacity: 0;
-    transform: translateY(-40px) scale(0.8);
+    transform: translateY(-56px) scale(0.85);
   }
 }
 

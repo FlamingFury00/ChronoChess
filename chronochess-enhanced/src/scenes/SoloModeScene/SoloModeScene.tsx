@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { useGameStore } from '../../store';
 import { Button } from '../../components/common';
 import { ResourceDisplay, MobileGameOverlay } from '../../components';
@@ -201,8 +201,23 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
 
   // Mobile camera controls are provided by MobileGameOverlay;
   // disable canvas touch handling while overlay is mounted to avoid duplicate handling.
+  const isTouchDevice = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const hasTouch =
+        'ontouchstart' in window ||
+        (navigator && (navigator as any).maxTouchPoints > 0) ||
+        window.matchMedia('(pointer: coarse)').matches;
+      const isNarrow = window.innerWidth <= 768; // only treat smaller screens as mobile overlay targets
+      return hasTouch && isNarrow;
+    } catch (err) {
+      return false;
+    }
+  }, []);
+
+  // Only toggle canvas touch handling when running on touch-capable devices
   useEffect(() => {
-    if (!is3DLoaded) return;
+    if (!is3DLoaded || !isTouchDevice) return;
     const renderer = rendererRef.current as any;
     if (!renderer || !renderer.setCanvasTouchEnabled) return;
 
@@ -220,7 +235,7 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         console.warn('Failed to re-enable canvas touch handler on overlay unmount:', err);
       }
     };
-  }, [is3DLoaded]);
+  }, [is3DLoaded, isTouchDevice]);
 
   return (
     <div className="solo-mode-scene scene">
@@ -369,19 +384,21 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                 </div>
               </div>
 
-              {/* Mobile overlay for touch gestures (forwards taps to renderer) */}
-              <MobileGameOverlay
-                onPieceSelect={pos => {
-                  // pos is { x: clientX, y: clientY } from TouchGestureHandler
-                  if (rendererRef.current && rendererRef.current.handlePointer) {
-                    try {
-                      rendererRef.current.handlePointer({ clientX: pos.x, clientY: pos.y });
-                    } catch (err) {
-                      console.warn('Failed to forward mobile overlay tap to renderer:', err);
+              {/* Mobile overlay for touch gestures (forwards taps to renderer) - only on touch devices */}
+              {isTouchDevice && (
+                <MobileGameOverlay
+                  onPieceSelect={pos => {
+                    // pos is { x: clientX, y: clientY } from TouchGestureHandler
+                    if (rendererRef.current && rendererRef.current.handlePointer) {
+                      try {
+                        rendererRef.current.handlePointer({ clientX: pos.x, clientY: pos.y });
+                      } catch (err) {
+                        console.warn('Failed to forward mobile overlay tap to renderer:', err);
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>
