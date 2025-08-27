@@ -4,6 +4,7 @@
  */
 
 import type { PieceType, PieceAbility } from '../engine/types';
+import { showToast } from '../components/common/toastService';
 import type { ResourceCost } from '../resources/types';
 
 export interface EvolutionTreeNode {
@@ -1170,5 +1171,59 @@ export class EvolutionTreeSystem {
     };
 
     return cooldowns[abilityId] || 0;
+  }
+
+  /**
+   * Emit a concise unlock toast for a given evolution node.
+   * This centralizes friendly name formatting and toast wording.
+   */
+  public emitUnlockToast(
+    evolutionNode: EvolutionTreeNode,
+    appliedSummary?: Record<string, number>
+  ): void {
+    try {
+      // If we received a concrete appliedSummary (abilityId -> piece count), prefer that
+      const keysFromSummary = appliedSummary
+        ? Object.keys(appliedSummary).filter(k => (appliedSummary[k] || 0) > 0)
+        : [];
+      if (keysFromSummary.length > 0) {
+        if (keysFromSummary.length === 1) {
+          const pretty = this.formatAbilityName(keysFromSummary[0]);
+          const count = appliedSummary![keysFromSummary[0]];
+          showToast(
+            `Ability unlocked: ${pretty}${typeof count === 'number' ? ` — Applied to ${count} piece${count > 1 ? 's' : ''}` : ''}`,
+            { level: 'success', duration: 4000 }
+          );
+          return;
+        }
+
+        const parts = keysFromSummary.map(k => {
+          const pretty = this.formatAbilityName(k);
+          const count = appliedSummary![k];
+          return typeof count === 'number' ? `${pretty} (${count})` : pretty;
+        });
+        showToast(`Abilities unlocked: ${parts.join(', ')}`, { level: 'success', duration: 4500 });
+        return;
+      }
+
+      // Fallback: use evolution node's declared ability effects (no emoji)
+      const abilityEffects = (evolutionNode.effects || []).filter(e => e.type === 'ability');
+      if (abilityEffects.length === 0) {
+        showToast(`${evolutionNode.name} unlocked`, { level: 'success', duration: 3000 });
+        return;
+      }
+
+      if (abilityEffects.length === 1) {
+        const pretty = this.formatAbilityName(abilityEffects[0].target);
+        showToast(`Ability unlocked: ${pretty}`, { level: 'success', duration: 4000 });
+      } else {
+        const parts = abilityEffects.map(a => this.formatAbilityName(a.target));
+        showToast(`Abilities unlocked: ${parts.join(', ')}`, { level: 'success', duration: 4500 });
+      }
+    } catch (err) {
+      // don't block game logic for toast failures
+      // eslint-disable-next-line no-console
+      console.debug('EvolutionTreeSystem.emitUnlockToast failed', err);
+    }
   }
 }

@@ -14,6 +14,7 @@ import { ChessEngine } from '../engine/ChessEngine';
 import { AIOpponent } from '../engine/AIOpponent';
 import { AutoBattleSystem, type PieceEvolutionConfig } from '../engine/AutoBattleSystem';
 import { simpleSoundPlayer } from '../audio/SimpleSoundPlayer';
+import { showToast } from '../components/common/toastService';
 import {
   getDefaultPieceEvolutions,
   evolutionCosts,
@@ -707,14 +708,14 @@ export const useGameStore = create<GameStore>()(
               .join(', ');
 
             setTimeout(() => {
-              alert(
-                `🎮 Welcome back!
-
-⏰ You were away for ${hoursAway} hours
-✨ Offline resource gains: ${gainSummary}
-
-${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maximum' : '✅ All offline progress applied successfully!'}`
-              );
+              try {
+                showToast(
+                  `🎮 Welcome back! You were away for ${hoursAway}h — Gains: ${gainSummary} ${offlineProgress.wasCaped ? '(capped)' : ''}`,
+                  { level: 'info', duration: 8000 }
+                );
+              } catch {
+                console.log('Welcome back:', hoursAway, gainSummary);
+              }
             }, 1000);
           }
 
@@ -762,6 +763,9 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             manualModePieceStates: Object.keys(saveData.manualModePieceStates || {}).length,
           });
           console.log('✨ All game progress and evolution unlocks preserved!');
+          try {
+            showToast('Game saved successfully.', { level: 'info' });
+          } catch (err) {}
         } catch (error) {
           console.error('❌ Failed to save to storage:', error);
           throw error;
@@ -992,12 +996,34 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       },
 
       canAffordEvolution: _evolutionId => {
-        // Simple cost check for now
-        const basicCost = {
-          temporalEssence: 10,
-          mnemonicDust: 5,
-        };
-        return resourceManager.canAfford(basicCost);
+        try {
+          const state = get();
+          const ets = state.evolutionTreeSystem;
+          if (!ets) return false;
+
+          // Search all trees for the requested evolution
+          const pieceTypes = ['p', 'n', 'b', 'r', 'q', 'k'];
+          let targetNode: any = null;
+          for (const pt of pieceTypes) {
+            const tree = ets.getEvolutionTree(pt as any);
+            if (!tree) continue;
+            if (tree.nodes.has(_evolutionId)) {
+              targetNode = tree.nodes.get(_evolutionId);
+              break;
+            }
+          }
+
+          if (!targetNode) return false;
+
+          // Check resource availability against current store resources
+          return Object.entries(targetNode.cost || {}).every(([resource, cost]) => {
+            const available = state.resources[resource as keyof typeof state.resources] as number;
+            return available >= (cost as number);
+          });
+        } catch (err) {
+          console.warn('canAffordEvolution failed:', err);
+          return false;
+        }
       },
 
       // UI actions
@@ -1345,6 +1371,9 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             mnemonicDust: state.resources.mnemonicDust + 1,
           });
           get().addToGameLog('Forfeited. 1 MD.');
+          try {
+            showToast('Forfeited encounter — 1 MD awarded', { level: 'info' });
+          } catch (err) {}
         }
       },
 
@@ -1693,6 +1722,13 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
               `✅ ${pieceType} ${attribute} evolved! Cost: ${cost} ${currency.toUpperCase()}`
             );
 
+            // Show success toast
+            try {
+              showToast(`✅ ${pieceType.toString().toUpperCase()} ${attribute} upgraded!`, {
+                level: 'success',
+              });
+            } catch (err) {}
+
             // Play evolution sound
             if (state.settings.soundEnabled) {
               simpleSoundPlayer.playSound('evolve');
@@ -1730,10 +1766,11 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             simpleSoundPlayer.playSound('error');
           }
 
-          // Show error message to user
-          if (errorMessage && typeof alert !== 'undefined') {
-            alert(errorMessage);
-          }
+          // Show error message to user via toast (avoid native alert modals)
+          try {
+            if (errorMessage) showToast(errorMessage, { level: 'error' });
+            else if (errorMessage) console.warn('User-visible error:', errorMessage);
+          } catch (err) {}
         }
 
         return false;
@@ -1811,6 +1848,10 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           },
         });
 
+        try {
+          showToast('Manual encounter started — good luck!', { level: 'info' });
+        } catch (err) {}
+
         // Update the 3D board to starting position
         setTimeout(() => {
           const renderer = (window as any).chronoChessRenderer;
@@ -1880,6 +1921,13 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           selectedSquare: null,
           validMoves: [],
         });
+
+        try {
+          if (victory === true) showToast('Victory! Rewards added.', { level: 'success' });
+          else if (victory === false)
+            showToast('Defeat. Better luck next time.', { level: 'error' });
+          else showToast('Encounter ended.', { level: 'info' });
+        } catch (err) {}
 
         // Clear board highlights
         setTimeout(() => {
@@ -4722,14 +4770,33 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         // Apply gameplay effects immediately
         get().applyEvolutionEffects();
 
-        // **CRITICAL: Apply evolution effects to chess engine**
-        get().applyEvolutionToChessEngine(targetEvolution);
+        // **CRITICAL: Apply evolution effects to chess engine
+        // The engine-side function may be untyped at the callsite; coerce safely to
+        // a Record<string, number> so TypeScript doesn't treat it as void.
+        let appliedSummary: Record<string, number> = {};
+        try {
+          const raw = (get().applyEvolutionToChessEngine as unknown as any)(targetEvolution);
+          if (raw && typeof raw === 'object') appliedSummary = raw as Record<string, number>;
+        } catch (err) {
+          // ignore and fall back to empty summary
+        }
 
         // Update piece evolutions with new abilities
         get().updatePieceEvolutionsFromUnlock(targetEvolution);
 
         // Refresh game state to apply changes
         get().refreshGameStateWithEvolutions();
+
+        // Emit a centralized toast via EvolutionTreeSystem (keeps formatting/wording consistent)
+        try {
+          const ets = state.evolutionTreeSystem;
+          if (ets && typeof ets.emitUnlockToast === 'function') {
+            // Pass appliedSummary so ETS can show abilities actually applied to pieces
+            ets.emitUnlockToast(targetEvolution as any, appliedSummary as Record<string, number>);
+          }
+        } catch (err) {
+          console.debug('unlockEvolution: ETS toast emission failed', err);
+        }
 
         // Create detailed log message about what changed
         const effectMessages = targetEvolution.effects
@@ -4759,6 +4826,10 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         get().addToGameLog(`💫 Effects Applied: ${effectMessages}`);
         get().addToGameLog(`✅ Active in both Manual and Auto-Battle modes!`);
 
+        // NOTE: UI-level notifications are handled in applyEvolutionToChessEngine with
+        // concise ability+effect messages. Do not emit a separate generic "Evolution unlocked"
+        // toast here to avoid duplicate notifications.
+
         // Save the game state immediately after unlocking evolution
         if (state.settings.autoSave) {
           console.log('💾 Saving game state after evolution unlock');
@@ -4769,7 +4840,8 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
       },
 
       // **NEW: Connect evolution effects to chess engine**
-      applyEvolutionToChessEngine: (evolution: any) => {
+      // Returns a summary map of abilityId -> number of pieces the ability was applied to
+      applyEvolutionToChessEngine: (evolution: any): Record<string, number> => {
         console.log(`🎯 Applying evolution ${evolution.name} to chess engine`);
 
         // Force chess engine to sync with current evolution state before changes
@@ -4827,9 +4899,11 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
 
         // For each effect, apply to all pieces of the evolution's type on the board
         const gameState = chessEngine.getGameState();
+        // Collect applied abilities so we can show a single aggregated toast instead of many
+        const appliedAbilitiesMap: Record<string, Set<string>> = {};
         if (!gameState.fen) {
           console.warn('Invalid game state, skipping piece evolution application');
-          return;
+          return {};
         }
 
         for (let file = 0; file < 8; file++) {
@@ -4864,6 +4938,12 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
                   if (!peRef.abilities.some((a: any) => a.id === pieceAbility.id)) {
                     peRef.abilities.push(pieceAbility);
                     peRef.evolutionLevel = (peRef.evolutionLevel || 1) + 1;
+                    // Track ability application to this square for aggregation
+                    try {
+                      if (!appliedAbilitiesMap[pieceAbility.id])
+                        appliedAbilitiesMap[pieceAbility.id] = new Set();
+                      appliedAbilitiesMap[pieceAbility.id].add(square);
+                    } catch (err) {}
                   }
                 }
 
@@ -4891,6 +4971,20 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         // Force synchronization after applying evolution
         console.log('🔄 Forcing chess engine synchronization with evolution state');
         chessEngine.syncPieceEvolutionsWithBoard();
+
+        // After applying to all squares: build and return a concise summary of which
+        // abilities were actually applied to pieces (abilityId -> count). The caller
+        // (usually unlockEvolution) can use this to present accurate UI notifications.
+        const appliedSummary: Record<string, number> = {};
+        try {
+          Object.entries(appliedAbilitiesMap).forEach(([abilityId, set]) => {
+            appliedSummary[abilityId] = (set as Set<string>).size;
+          });
+        } catch (err) {
+          // ignore
+        }
+
+        return appliedSummary;
       },
 
       updatePieceEvolutionsFromUnlock: (evolution: any) => {
@@ -5011,6 +5105,11 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
         // Apply evolution effects to piece capabilities
         const pieceTypes = ['p', 'n', 'b', 'r', 'q', 'k'] as const;
 
+        // Collect unlocked abilities for a summary toast
+        const unlockedAbilitiesSummary: Record<string, number> = {};
+
+        const previousPieceEvolutions = state.pieceEvolutions || {};
+
         pieceTypes.forEach(pieceType => {
           const pieceKey = {
             p: 'pawn',
@@ -5047,12 +5146,27 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
             }
 
             if (effect.type === 'ability') {
-              // Unlock new abilities
+              // Unlock new abilities — but only count them for the toast if they were not present before
               console.log(`🆕 Unlocked ability for ${pieceKey}: ${effect.target}`);
               if (!newPieceEvolutions[pieceKey]) {
                 (newPieceEvolutions[pieceKey] as any) = {};
               }
+
+              const previouslyHad = !!(
+                previousPieceEvolutions &&
+                (previousPieceEvolutions as any)[pieceKey] &&
+                typeof (previousPieceEvolutions as any)[pieceKey][effect.target] !== 'undefined'
+              );
+
               (newPieceEvolutions[pieceKey] as any)[effect.target] = effect.value;
+
+              // Track for aggregated toast summary only if newly unlocked now
+              try {
+                if (!previouslyHad) {
+                  unlockedAbilitiesSummary[effect.target] =
+                    (unlockedAbilitiesSummary[effect.target] || 0) + 1;
+                }
+              } catch (err) {}
             }
           });
         });
@@ -5102,6 +5216,11 @@ ${offlineProgress.wasCaped ? '⚠️ Offline gains were capped at 24 hours maxim
           currentState.autoBattleSystem.updatePieceEvolutions(enhancedConfig);
           console.log('🔄 Updated auto-battle system with new evolution effects:', enhancedConfig);
         }
+
+        // NOTE: We intentionally do NOT show an aggregated 'Abilities unlocked' toast here
+        // because ability applications are summarized when applied to board squares in
+        // `applyEvolutionToChessEngine` (which includes piece counts). This avoids
+        // duplicate notifications.
       },
 
       // Utility actions

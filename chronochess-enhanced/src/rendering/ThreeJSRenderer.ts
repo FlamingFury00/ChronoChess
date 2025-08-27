@@ -1190,8 +1190,60 @@ export class ThreeJSRenderer {
   }
 
   applyAestheticBooster(_piece: THREE.Group, _booster: AestheticBooster): void {
-    // TODO: Implement aesthetic booster application
-    // This will be implemented in later tasks
+    // Minimal implementation: create a global sparkle trail across the board to
+    // provide visible feedback when the player purchases an aesthetic booster.
+    try {
+      const booster = _booster as any;
+      const type =
+        booster && booster.type ? booster.type : typeof _booster === 'string' ? _booster : null;
+
+      if (!type) {
+        // No booster type provided; create a small board-wide sparkle
+        const center = new THREE.Vector3(0, 0.5, 0);
+        this.physicsEffects.createSparkEffect(center, new THREE.Vector3(0, 1, 0), 3.0);
+        return;
+      }
+
+      if (type === 'sparkle_trail') {
+        // Create multiple sparkles moving across the board center
+        const count = 12;
+        for (let i = 0; i < count; i++) {
+          const x = (Math.random() - 0.5) * 6.5;
+          const z = (Math.random() - 0.5) * 6.5;
+          const pos = new THREE.Vector3(x, 0.5 + Math.random() * 0.4, z);
+          this.physicsEffects.createSparkEffect(
+            pos,
+            new THREE.Vector3(0, 1, 0),
+            1200 + Math.random() * 800
+          );
+        }
+
+        // Add a brief shimmer to the skybox by slightly changing its material uniform if available
+        try {
+          if ((this.skybox as any).material && (this.skybox as any).material.uniforms) {
+            const u = (this.skybox as any).material.uniforms;
+            const originalTop = (u.topColor.value as THREE.Color).clone();
+            (u.topColor.value as THREE.Color).lerp(new THREE.Color(0x6fc5ff), 0.6);
+            setTimeout(() => {
+              try {
+                (u.topColor.value as THREE.Color).copy(originalTop);
+              } catch {}
+            }, 900);
+          }
+        } catch (err) {
+          // ignore
+        }
+
+        console.log('✨ Applied aesthetic booster: sparkle_trail');
+        return;
+      }
+
+      // Fallback: generic sparkle
+      const center = new THREE.Vector3(0, 0.5, 0);
+      this.physicsEffects.createSparkEffect(center, new THREE.Vector3(0, 1, 0), 2000);
+    } catch (err) {
+      console.warn('applyAestheticBooster failed:', err);
+    }
   }
 
   // VFX system matching HTML reference

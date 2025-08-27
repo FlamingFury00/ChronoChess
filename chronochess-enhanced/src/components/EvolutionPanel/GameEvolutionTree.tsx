@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { useToast } from '../common/ToastProvider';
 import {
   ReactFlow,
   Controls,
@@ -304,6 +305,7 @@ export const GameEvolutionTree: React.FC<GameEvolutionTreeProps> = ({
   const treeKey = `${pieceType}-${tree.pieceType}`;
   const { resources, soloModeStats, unlockEvolution, isEvolutionUnlocked } = useGameStore();
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
+  const { showToast } = useToast();
   // Get unlocked evolutions to trigger re-renders when they change
   const unlockedEvolutions = useGameStore(state => state.unlockedEvolutions);
 
@@ -319,10 +321,11 @@ export const GameEvolutionTree: React.FC<GameEvolutionTreeProps> = ({
       });
 
       if (!canAfford) {
-        alert(
+        showToast(
           `Insufficient resources! Need: ${Object.entries(node.cost)
             .map(([res, cost]) => `${cost} ${res}`)
-            .join(', ')}`
+            .join(', ')}`,
+          { level: 'error' }
         );
         return;
       }
@@ -330,23 +333,13 @@ export const GameEvolutionTree: React.FC<GameEvolutionTreeProps> = ({
       const success = unlockEvolution(node.id);
 
       if (success) {
-        const pieceTypeName =
-          {
-            p: 'Pawns',
-            n: 'Knights',
-            b: 'Bishops',
-            r: 'Rooks',
-            q: 'Queens',
-            k: 'Kings',
-          }[pieceType] || 'Pieces';
-
-        alert(
-          `🎆 EVOLUTION UNLOCKED: ${node.name}\nApplied to: ${pieceTypeName}\n✅ Active in all game modes!`
-        );
+        // UI-level toast suppressed: store will emit a concise aggregated toast for abilities/effects
         // Close the expanded node after successful unlock
         setExpandedNodeId(null);
       } else {
-        alert('❌ Failed to unlock evolution. Please check your resources and try again.');
+        showToast('❌ Failed to unlock evolution. Please check your resources and try again.', {
+          level: 'error',
+        });
       }
     },
     [resources, unlockEvolution, pieceType]

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import { useGameStore } from '../../store';
+import { useToast } from '../../components/common/ToastProvider';
 import { Button } from '../../components/common';
 import { ResourceDisplay, MobileGameOverlay } from '../../components';
 import { ThreeJSRenderer } from '../../rendering';
@@ -34,7 +35,12 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     manualModePieceStates,
     pendingPlayerDashMove,
     getEnhancedValidMoves,
+    canAffordCost,
+    spendResources,
+    addToGameLog,
   } = useGameStore();
+
+  const { showToast } = useToast();
 
   const stats = getSoloModeStats();
   const isEncounterActive = autoBattleSystem?.isEncounterActive() || false;
@@ -476,16 +482,49 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
           </div>
 
           <div className="solo-mode-scene__boosters-card">
-            <h3>Boosters (Placeholder)</h3>
+            <h3>Boosters</h3>
+            <p className="solo-mode-scene__boosters-desc">
+              Purchase temporary aesthetic boosters that add visual flair to your battles. These do
+              not affect gameplay.
+            </p>
             <Button
               onClick={() => {
-                // Placeholder for aesthetic booster purchase
-                console.log('Buying Sparkle Trail booster');
+                const cost = { aetherShards: 5 };
+                if (!canAffordCost(cost)) {
+                  addToGameLog(
+                    '⚠️ Not enough Aether Shards to buy Sparkle Trail (5 Aether Shards).'
+                  );
+                  return;
+                }
+
+                const success = spendResources(cost);
+                if (success) {
+                  addToGameLog('✨ Purchased Sparkle Trail (5 Aether Shards). Enjoy the show!');
+                  // Show a transient toast confirming the purchase
+                  try {
+                    showToast('✨ Sparkle Trail purchased — enjoy the visuals!', {
+                      level: 'success',
+                    });
+                  } catch (err) {
+                    // In case toast provider isn't available for some reason, continue silently
+                  }
+                  // Trigger renderer booster effect if available
+                  const renderer = rendererRef.current;
+                  if (renderer && typeof (renderer as any).applyAestheticBooster === 'function') {
+                    try {
+                      (renderer as any).applyAestheticBooster('sparkle_trail');
+                    } catch (err) {
+                      console.warn('Failed to apply aesthetic booster on renderer:', err);
+                    }
+                  }
+                } else {
+                  addToGameLog('❌ Failed to spend Aether Shards. Purchase cancelled.');
+                }
               }}
               variant="secondary"
               fullWidth
             >
-              ✨ Sparkle Trail (5 AS)
+              ✨ Sparkle Trail (5 Aether Shards)
             </Button>
           </div>
 

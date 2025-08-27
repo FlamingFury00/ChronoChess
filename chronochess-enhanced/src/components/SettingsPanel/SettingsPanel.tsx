@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useToast } from '../common/ToastProvider';
+import { useConfirm } from '../common/ConfirmProvider';
 import { useGameStore } from '../../store';
 import Panel from '../common/Panel/Panel';
 import Button from '../common/Button/Button';
@@ -38,6 +40,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
     });
   };
 
+  const confirm = useConfirm();
+  const { showToast } = useToast();
+
+  const handleResetGame = async () => {
+    const confirmed = await confirm('Sure? This will delete all progress and cannot be undone.', {
+      title: 'Reset Game',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+    });
+    if (confirmed) {
+      const store = useGameStore.getState();
+      store.reset();
+      // Clear all save data
+      localStorage.removeItem('chronochess_save');
+      console.log('🔄 Game reset successfully!');
+      showToast('Game reset successfully!', { level: 'info' });
+      // Reload to reflect changes
+      window.location.reload();
+    }
+  };
+
   const exportSettings = () => {
     const settingsData = JSON.stringify(settings, null, 2);
     const blob = new Blob([settingsData], { type: 'application/json' });
@@ -65,7 +88,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
             updateSettings(importedSettings);
           } catch (error) {
             console.error('Failed to import settings:', error);
-            alert('Failed to import settings. Please check the file format.');
+            const { showToast } = useToast();
+            showToast('Failed to import settings. Please check the file format.', {
+              level: 'error',
+            });
           }
         };
         reader.readAsText(file);
@@ -398,6 +424,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
         <div className="settings-panel__actions">
           <Button onClick={resetToDefaults} variant="secondary" size="small">
             Reset to Defaults
+          </Button>
+
+          <Button onClick={handleResetGame} variant="danger" size="small">
+            Reset Game
           </Button>
 
           <Button onClick={exportSettings} variant="ghost" size="small">

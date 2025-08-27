@@ -14,7 +14,7 @@ interface EvolutionPanelProps {
 
 const EvolutionPanel: React.FC<EvolutionPanelProps> = ({ className = '' }) => {
   const store = useGameStore();
-  const { evolvePiece, canAffordEvolution, evolutionTreeSystem } = store;
+  const { canAffordEvolution, evolutionTreeSystem, unlockEvolution } = store;
 
   // Get unlocked evolutions to trigger re-renders when they change
   const unlockedEvolutions = useGameStore(state => state.unlockedEvolutions);
@@ -53,18 +53,12 @@ const EvolutionPanel: React.FC<EvolutionPanelProps> = ({ className = '' }) => {
   const pieceTypes: PieceType[] = ['p', 'r', 'n', 'b', 'q', 'k'];
 
   const handleEvolutionPurchase = (evolutionId: string) => {
-    const canAfford = canAffordEvolution(evolutionId);
-    if (!canAfford) {
-      console.log(`Cannot afford evolution ${evolutionId}`);
-      return;
-    }
-
-    // Evolve the piece using the game store method
-    const success = evolvePiece(selectedPieceType, evolutionId);
+    // Prefer the centralized evolution unlock flow which handles costs, engine sync, and toasts
+    const success = unlockEvolution(evolutionId);
     if (success) {
-      console.log(`Successfully evolved piece with ${evolutionId}`);
+      console.log(`Unlocked evolution ${evolutionId}`);
     } else {
-      console.log(`Failed to evolve piece with ${evolutionId}`);
+      console.log(`Failed to unlock evolution ${evolutionId}`);
     }
   };
 

@@ -1,4 +1,5 @@
 import React from 'react';
+// ...existing code... (removed unused toast/confirm imports)
 import { useGameStore } from '../../store';
 import { Button } from '../common';
 import { currencyDisplayMap } from '../../store/pieceEvolutionStore';
@@ -19,6 +20,7 @@ export const SpecificPieceEvolution: React.FC<SpecificPieceEvolutionProps> = ({
 }) => {
   const { resources, pieceEvolutions, evolvePieceAttribute, getPieceEvolutionCost } =
     useGameStore();
+  // confirmDialog and showToast removed; reset moved to Settings panel
 
   const evolvePiece = (pieceType: keyof PieceEvolutionData, attribute: string, value?: any) => {
     evolvePieceAttribute(pieceType, attribute, value);
@@ -326,26 +328,7 @@ export const SpecificPieceEvolution: React.FC<SpecificPieceEvolutionProps> = ({
         ✨ <strong>Auto-Save Active:</strong> Your progress is automatically saved as you play!
       </div>
 
-      <div className="save-load-controls">
-        <Button
-          onClick={() => {
-            // Reset game with confirmation
-            if (confirm('Sure? This will delete all progress and cannot be undone.')) {
-              const store = useGameStore.getState();
-              store.reset();
-              // Clear all save data
-              localStorage.removeItem('chronochess_save');
-              console.log('🔄 Game reset successfully!');
-              alert('Game reset successfully!');
-              // Reload to reflect changes
-              window.location.reload();
-            }
-          }}
-          variant="danger"
-        >
-          Reset Game
-        </Button>
-      </div>
+      {/* save/load controls moved to Settings */}
     </div>
   );
 };

@@ -26,7 +26,13 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
 }) => {
   // Subscribe specifically to the `resources` slice so this component
   // reliably rerenders when resources change across the app.
-  const resources = useGameStore(state => state.resources);
+  // Note: some tests/mock setups return an object wrapper (e.g. { resources: {...} })
+  // instead of selector behavior; normalize both shapes here for robustness.
+  const _resourcesRaw = useGameStore(state => state.resources as any);
+  const resources =
+    _resourcesRaw && typeof (_resourcesRaw as any).resources !== 'undefined'
+      ? (_resourcesRaw as any).resources
+      : (_resourcesRaw as any);
   const [animations, setAnimations] = useState<ResourceAnimation[]>([]);
   // Keep a ref to the previous resources snapshot so updates here don't trigger
   // a rerender — using state for this was causing useEffect to re-run repeatedly.
@@ -174,9 +180,7 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
                 <span className="resource-display__icon" aria-hidden="true">
                   {getResourceIcon(resourceType)}
                 </span>
-                {!compact && (
-                  <span className="resource-display__name">{getResourceName(resourceType)}</span>
-                )}
+                <span className="resource-display__name">{getResourceName(resourceType)}</span>
               </div>
 
               <div className="resource-display__value">
@@ -226,15 +230,14 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
       {!compact && (
         <div className="resource-display__multipliers">
           {Object.entries(resources.bonusMultipliers || {}).map(([resourceType, multiplier]) => {
-            if (multiplier > 1) {
+            const m = Number(multiplier as any) || 0;
+            if (m > 1) {
               return (
                 <div key={resourceType} className="resource-display__multiplier">
                   <span className="resource-display__multiplier-icon">
                     {getResourceIcon(resourceType)}
                   </span>
-                  <span className="resource-display__multiplier-value">
-                    ×{multiplier.toFixed(1)}
-                  </span>
+                  <span className="resource-display__multiplier-value">×{m.toFixed(1)}</span>
                 </div>
               );
             }

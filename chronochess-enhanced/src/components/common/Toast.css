@@ -1,0 +1,96 @@
+.toast-root {
+  position: fixed;
+  right: var(--spacing-md);
+  bottom: var(--spacing-md);
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--spacing-sm);
+  z-index: var(--z-toast, 1080);
+  pointer-events: none;
+  width: auto;
+  max-width: min(380px, calc(100vw - 2 * var(--spacing-md)));
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: calc(var(--spacing-sm) + 2px) var(--spacing-md);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-secondary);
+  box-shadow:
+    0 8px 24px var(--shadow-secondary),
+    0 0 0 1px rgba(122, 162, 247, 0.04);
+  font-weight: var(--font-weight-semibold);
+  transform-origin: bottom right;
+  animation: toast-in var(--duration-fast) var(--ease-out);
+}
+
+.toast__message {
+  flex: 1 1 auto;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-snug);
+  color: var(--text-primary);
+}
+
+.toast__close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.toast__close:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.toast--success {
+  border-left: 4px solid var(--success);
+  box-shadow:
+    0 10px 30px rgba(158, 206, 106, 0.06),
+    0 0 0 1px rgba(158, 206, 106, 0.02);
+}
+
+.toast--error {
+  border-left: 4px solid var(--error);
+  box-shadow:
+    0 10px 30px rgba(247, 118, 142, 0.06),
+    0 0 0 1px rgba(247, 118, 142, 0.02);
+}
+
+.toast--info {
+  border-left: 4px solid var(--info);
+  box-shadow:
+    0 10px 30px rgba(122, 162, 247, 0.06),
+    0 0 0 1px rgba(122, 162, 247, 0.02);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 520px) {
+  .toast-root {
+    left: var(--spacing-md);
+    right: var(--spacing-md);
+    bottom: var(--spacing-sm);
+    align-items: center;
+  }
+  .toast {
+    width: 100%;
+  }
+}

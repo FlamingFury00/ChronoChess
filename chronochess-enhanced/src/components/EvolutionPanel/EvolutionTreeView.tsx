@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useToast } from '../common/ToastProvider';
 import { useGameStore } from '../../store';
 import { Button } from '../common';
 import type { EvolutionTreeNode, PieceEvolutionTree } from '../../evolution/EvolutionTreeSystem';
@@ -290,11 +291,7 @@ const ConnectionLine: React.FC<ConnectionLineProps> = ({ from, to, isActive }) =
   );
 };
 
-const EvolutionTreeView: React.FC<EvolutionTreeViewProps> = ({
-  pieceType,
-  tree,
-  className = '',
-}) => {
+const EvolutionTreeView: React.FC<EvolutionTreeViewProps> = ({ tree, className = '' }) => {
   const { resources, soloModeStats, unlockEvolution, isEvolutionUnlocked } = useGameStore();
   const [selectedNode, setSelectedNode] = useState<EvolutionTreeNode | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
@@ -474,11 +471,14 @@ const EvolutionTreeView: React.FC<EvolutionTreeViewProps> = ({
   };
 
   const handleUnlockEvolution = (node: EvolutionTreeNode) => {
+    const { showToast } = useToast();
+
     if (!canAffordEvolution(node)) {
-      alert(
+      showToast(
         `Insufficient resources! Need: ${Object.entries(node.cost)
           .map(([res, cost]) => `${cost} ${res}`)
-          .join(', ')}`
+          .join(', ')}`,
+        { level: 'error' }
       );
       return;
     }
@@ -487,29 +487,12 @@ const EvolutionTreeView: React.FC<EvolutionTreeViewProps> = ({
     const success = unlockEvolution(node.id);
 
     if (success) {
-      const pieceTypeName =
-        {
-          p: 'Pawns',
-          n: 'Knights',
-          b: 'Bishops',
-          r: 'Rooks',
-          q: 'Queens',
-          k: 'Kings',
-        }[pieceType] || 'Pieces';
-
-      const effectsList = node.effects.map(effect => formatEffectDescription(effect)).join('\n• ');
-      const gameplayImpact = getGameplayImpactDescription(node.effects);
-
-      alert(
-        `🎆 EVOLUTION UNLOCKED: ${node.name}\n\n` +
-          `Applied to: ${pieceTypeName}\n\n` +
-          `💫 Direct Effects:\n• ${effectsList}\n\n` +
-          `🎯 Gameplay Impact:\n${gameplayImpact}\n\n` +
-          `✅ Active in both Manual and Auto-Battle modes!`
-      );
+      // UI-level toast suppressed: store will emit a concise aggregated toast for abilities/effects
       setSelectedNode(null);
     } else {
-      alert('❌ Failed to unlock evolution. Please check your resources and try again.');
+      showToast('❌ Failed to unlock evolution. Please check your resources and try again.', {
+        level: 'error',
+      });
     }
   };
 
