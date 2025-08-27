@@ -35,6 +35,8 @@ export class ThreeJSRenderer {
   private onSquareClick?: (square: string) => void;
   private selectedSquare: string | null = null;
   private validMoveSquares: Set<string> = new Set();
+  // Reference to the canvas touch handler so it can be removed when overlay forwarding is used
+  private canvasTouchHandler: ((ev: Event) => void) | null = null;
 
   // Chess-specific properties matching HTML implementation
   private squareSize = 1;
@@ -112,6 +114,7 @@ export class ThreeJSRenderer {
   };
 
   constructor(canvas: HTMLCanvasElement) {
+    // canvas is available via the constructor parameter; no persistent field required
     // Initialize scene
     this.scene = new THREE.Scene();
 
@@ -181,6 +184,71 @@ export class ThreeJSRenderer {
 
     this.initializeScene();
     this.setupInteraction(canvas);
+  }
+
+  /**
+   * Public: process a pointer event given client coordinates (e.g. forwarded by an overlay).
+   */
+  public handlePointer(point: { clientX: number; clientY: number } | MouseEvent): void {
+    let clientX: number;
+    let clientY: number;
+
+    if ((point as MouseEvent).clientX !== undefined) {
+      const me = point as MouseEvent;
+      clientX = me.clientX;
+      clientY = me.clientY;
+    } else {
+      const p = point as { clientX: number; clientY: number };
+      clientX = p.clientX;
+      clientY = p.clientY;
+    }
+
+    const canvas = this.renderer.domElement as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    this.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // Check for intersections with board squares
+    const squareIntersects = this.raycaster.intersectObjects(
+      Array.from(this.boardSquares.values())
+    );
+
+    if (squareIntersects.length > 0) {
+      const intersectedSquare = squareIntersects[0].object as THREE.Mesh;
+
+      // Find the square name from the boardSquares map
+      for (const [squareName, squareMesh] of this.boardSquares.entries()) {
+        if (squareMesh === intersectedSquare) {
+          if (this.onSquareClick) this.onSquareClick(squareName);
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Enable or disable the canvas' native touchend listener. Use when an overlay forwards taps
+   * to avoid duplicate handling.
+   */
+  public setCanvasTouchEnabled(enabled: boolean): void {
+    try {
+      const canvas = this.renderer.domElement as HTMLCanvasElement;
+      if (enabled) {
+        if (this.canvasTouchHandler) {
+          canvas.addEventListener('touchend', this.canvasTouchHandler as EventListener, {
+            passive: true,
+          });
+        }
+      } else {
+        if (this.canvasTouchHandler) {
+          canvas.removeEventListener('touchend', this.canvasTouchHandler as EventListener);
+        }
+      }
+    } catch (err) {
+      console.warn('setCanvasTouchEnabled failed:', err);
+    }
   }
 
   // Scene management
@@ -1794,20 +1862,7 @@ export class ThreeJSRenderer {
 
   // Board interaction methods
   private setupInteraction(canvas: HTMLCanvasElement): void {
-    const handleClick = (event: MouseEvent | TouchEvent) => {
-      event.preventDefault();
-
-      let clientX: number, clientY: number;
-
-      if (event instanceof TouchEvent) {
-        if (event.touches.length === 0) return;
-        clientX = event.touches[0].clientX;
-        clientY = event.touches[0].clientY;
-      } else {
-        clientX = event.clientX;
-        clientY = event.clientY;
-      }
-
+    const processPointer = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
       this.mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -1834,8 +1889,44 @@ export class ThreeJSRenderer {
       }
     };
 
+    const handleClick = (event: MouseEvent | TouchEvent) => {
+      // Prevent default behaviour for touch events (tap/scroll interference)
+      // Use a try/catch because some synthetic event environments may not allow preventDefault
+      try {
+        (event as Event).preventDefault();
+      } catch {}
+
+      let clientX: number, clientY: number;
+
+      if (typeof TouchEvent !== 'undefined' && event instanceof TouchEvent) {
+        // On touchend the `touches` list is usually empty; use `changedTouches` as a fallback
+        const touchEvent = event as TouchEvent;
+        const touch =
+          (touchEvent.touches && touchEvent.touches[0]) ||
+          (touchEvent.changedTouches && touchEvent.changedTouches[0]);
+        if (!touch) return;
+        clientX = touch.clientX;
+        clientY = touch.clientY;
+      } else if ((event as MouseEvent).clientX !== undefined) {
+        const me = event as MouseEvent;
+        clientX = me.clientX;
+        clientY = me.clientY;
+      } else {
+        // Unknown event type
+        return;
+      }
+
+      processPointer(clientX, clientY);
+    };
+
     canvas.addEventListener('click', handleClick);
-    canvas.addEventListener('touchend', handleClick);
+    // Keep listening for touchend (use changedTouches inside handler) to detect taps reliably
+    canvas.addEventListener('touchend', handleClick, { passive: true });
+    // Store the handler so callers can disable/enable it later
+    this.canvasTouchHandler = handleClick as (ev: Event) => void;
+
+    // Keep canvasTouchHandler stored so public method can (re)attach/detach it
+    this.canvasTouchHandler = handleClick as (ev: Event) => void;
   }
 
   setSquareClickHandler(handler: (square: string) => void): void {

@@ -599,52 +599,7 @@
   color: var(--accent-primary);
 }
 
-.solo-mode-scene__mobile-controls {
-  position: absolute;
-  bottom: 15px;
-  left: 15px;
-  right: 15px;
-  display: none; /* Hidden by default on desktop */
-  justify-content: space-between;
-  z-index: 5;
-  pointer-events: none;
-  /* Allow scrolling to pass through */
-  touch-action: pan-y;
-}
-
-@media (max-width: 768px) {
-  .solo-mode-scene__mobile-controls {
-    display: flex; /* Only show on mobile */
-    bottom: 15px;
-    z-index: 10;
-  }
-}
-
-.solo-mode-scene__control-cluster {
-  display: flex;
-  gap: 8px;
-  pointer-events: auto;
-}
-
-.solo-mode-scene__mobile-control {
-  background-color: rgba(40, 44, 52, 0.8);
-  border: 1px solid var(--accent-primary);
-  color: var(--accent-primary);
-  font-size: 1.2em;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  margin: 0;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.solo-mode-scene__mobile-control:hover {
-  background-color: rgba(97, 175, 239, 0.7);
-  color: var(--bg-primary);
-}
+/* Mobile controls removed: overlay handles touch gestures */
 
 .solo-mode-scene__rewards-card,
 .solo-mode-scene__stats-card {

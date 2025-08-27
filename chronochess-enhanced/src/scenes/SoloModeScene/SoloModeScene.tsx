@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useGameStore } from '../../store';
 import { Button } from '../../components/common';
-import { ResourceDisplay } from '../../components';
+import { ResourceDisplay, MobileGameOverlay } from '../../components';
 import { ThreeJSRenderer } from '../../rendering';
 import type { SceneProps } from '../types';
 import './SoloModeScene.css';
@@ -199,35 +199,28 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     forfeitEncounter();
   };
 
-  const handleMobileCameraControl = (action: string) => {
-    if (!rendererRef.current) return;
+  // Mobile camera controls are provided by MobileGameOverlay;
+  // disable canvas touch handling while overlay is mounted to avoid duplicate handling.
+  useEffect(() => {
+    if (!is3DLoaded) return;
+    const renderer = rendererRef.current as any;
+    if (!renderer || !renderer.setCanvasTouchEnabled) return;
 
-    // Only allow camera controls if OrbitControls are disabled (mobile)
-    if (window.innerWidth <= 768) {
-      switch (action) {
-        case 'rotateLeft':
-          if (rendererRef.current.rotateCameraLeft) {
-            rendererRef.current.rotateCameraLeft();
-          }
-          break;
-        case 'rotateRight':
-          if (rendererRef.current.rotateCameraRight) {
-            rendererRef.current.rotateCameraRight();
-          }
-          break;
-        case 'zoomIn':
-          if (rendererRef.current.zoomCameraIn) {
-            rendererRef.current.zoomCameraIn();
-          }
-          break;
-        case 'zoomOut':
-          if (rendererRef.current.zoomCameraOut) {
-            rendererRef.current.zoomCameraOut();
-          }
-          break;
-      }
+    // Disable canvas touch handling while overlay is present
+    try {
+      renderer.setCanvasTouchEnabled(false);
+    } catch (err) {
+      console.warn('Failed to disable canvas touch handler on overlay mount:', err);
     }
-  };
+
+    return () => {
+      try {
+        renderer.setCanvasTouchEnabled(true);
+      } catch (err) {
+        console.warn('Failed to re-enable canvas touch handler on overlay unmount:', err);
+      }
+    };
+  }, [is3DLoaded]);
 
   return (
     <div className="solo-mode-scene scene">
@@ -376,45 +369,19 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                 </div>
               </div>
 
-              {/* Mobile 3D Controls */}
-              <div className="solo-mode-scene__mobile-controls">
-                <div className="solo-mode-scene__control-cluster">
-                  <Button
-                    onClick={() => handleMobileCameraControl('rotateLeft')}
-                    variant="ghost"
-                    size="small"
-                    className="solo-mode-scene__mobile-control"
-                  >
-                    ↶
-                  </Button>
-                  <Button
-                    onClick={() => handleMobileCameraControl('rotateRight')}
-                    variant="ghost"
-                    size="small"
-                    className="solo-mode-scene__mobile-control"
-                  >
-                    ↷
-                  </Button>
-                </div>
-                <div className="solo-mode-scene__control-cluster">
-                  <Button
-                    onClick={() => handleMobileCameraControl('zoomIn')}
-                    variant="ghost"
-                    size="small"
-                    className="solo-mode-scene__mobile-control"
-                  >
-                    +
-                  </Button>
-                  <Button
-                    onClick={() => handleMobileCameraControl('zoomOut')}
-                    variant="ghost"
-                    size="small"
-                    className="solo-mode-scene__mobile-control"
-                  >
-                    -
-                  </Button>
-                </div>
-              </div>
+              {/* Mobile overlay for touch gestures (forwards taps to renderer) */}
+              <MobileGameOverlay
+                onPieceSelect={pos => {
+                  // pos is { x: clientX, y: clientY } from TouchGestureHandler
+                  if (rendererRef.current && rendererRef.current.handlePointer) {
+                    try {
+                      rendererRef.current.handlePointer({ clientX: pos.x, clientY: pos.y });
+                    } catch (err) {
+                      console.warn('Failed to forward mobile overlay tap to renderer:', err);
+                    }
+                  }
+                }}
+              />
             </div>
           </div>
         </div>
