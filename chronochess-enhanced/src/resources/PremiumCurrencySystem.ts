@@ -6,6 +6,12 @@ import type {
   TacticalPattern,
   PremiumCurrencyReward,
 } from './types';
+import {
+  ACHIEVEMENT_REWARD_MULTIPLIER,
+  BASE_REWARD_FACTOR,
+  PER_STREAK_BONUS,
+  STREAK_MULTIPLIER_CAP,
+} from './premiumConfig';
 
 export class PremiumCurrencySystem {
   private streakCount: number = 0;
@@ -13,6 +19,8 @@ export class PremiumCurrencySystem {
   private streakTimeoutMs: number = 30 * 60 * 1000; // 30 minutes
   private achievements: Map<string, Achievement> = new Map();
   private tacticalPatternHistory: TacticalPattern[] = [];
+
+  // Note: multipliers are centralized in src/resources/premiumConfig.ts
 
   constructor() {
     this.initializeAchievements();
@@ -25,7 +33,9 @@ export class PremiumCurrencySystem {
         name: 'First Elegant Victory',
         description: 'Achieve your first elegant checkmate',
         requirement: { type: 'elegant_checkmate_count', value: 1 },
-        reward: { aetherShards: 10 },
+        reward: {
+          aetherShards: Math.ceil(10 * ACHIEVEMENT_REWARD_MULTIPLIER),
+        },
         unlocked: false,
       },
       {
@@ -33,7 +43,9 @@ export class PremiumCurrencySystem {
         name: 'Back Rank Master',
         description: 'Execute 5 back rank checkmates',
         requirement: { type: 'pattern_count', pattern: 'back_rank_mate', value: 5 },
-        reward: { aetherShards: 25 },
+        reward: {
+          aetherShards: Math.ceil(25 * ACHIEVEMENT_REWARD_MULTIPLIER),
+        },
         unlocked: false,
       },
       {
@@ -41,7 +53,9 @@ export class PremiumCurrencySystem {
         name: 'Smothered Mate Artist',
         description: 'Perform a smothered mate',
         requirement: { type: 'pattern_count', pattern: 'smothered_mate', value: 1 },
-        reward: { aetherShards: 50 },
+        reward: {
+          aetherShards: Math.ceil(50 * ACHIEVEMENT_REWARD_MULTIPLIER),
+        },
         unlocked: false,
       },
       {
@@ -49,7 +63,9 @@ export class PremiumCurrencySystem {
         name: 'Streak Master',
         description: 'Achieve a 10-game elegant win streak',
         requirement: { type: 'max_streak', value: 10 },
-        reward: { aetherShards: 100 },
+        reward: {
+          aetherShards: Math.ceil(100 * ACHIEVEMENT_REWARD_MULTIPLIER),
+        },
         unlocked: false,
       },
       {
@@ -57,7 +73,9 @@ export class PremiumCurrencySystem {
         name: 'Tactical Genius',
         description: 'Execute 3 different rare tactical patterns in one game',
         requirement: { type: 'patterns_in_game', value: 3 },
-        reward: { aetherShards: 75 },
+        reward: {
+          aetherShards: Math.ceil(75 * ACHIEVEMENT_REWARD_MULTIPLIER),
+        },
         unlocked: false,
       },
     ];
@@ -234,12 +252,13 @@ export class PremiumCurrencySystem {
     let bonusDescription = '';
 
     if (this.streakCount >= 2) {
-      multiplier = 1 + (this.streakCount - 1) * 0.1; // 10% per streak after first
+      // Per-streak bonus configurable via PER_STREAK_BONUS
+      multiplier = 1 + (this.streakCount - 1) * PER_STREAK_BONUS;
       bonusDescription = `${this.streakCount}x Elegant Win Streak`;
     }
 
-    // Cap multiplier at 3x for balance
-    multiplier = Math.min(multiplier, 3);
+    // Cap multiplier at configured cap
+    multiplier = Math.min(multiplier, STREAK_MULTIPLIER_CAP);
 
     return {
       multiplier,
@@ -260,8 +279,8 @@ export class PremiumCurrencySystem {
     }
     this.lastElegantWinTime = now;
 
-    // Calculate base reward
-    const baseReward = Math.floor(eleganceScore.total * 0.1); // 10% of elegance score
+    // Calculate base reward using centralized base factor
+    const baseReward = Math.floor(eleganceScore.total * BASE_REWARD_FACTOR);
 
     // Apply streak multiplier
     const streakMultiplier = this.calculateStreakMultiplier();

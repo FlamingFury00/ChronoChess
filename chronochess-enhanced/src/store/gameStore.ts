@@ -8,6 +8,18 @@ import type { ResourceState } from '../resources/types';
 import type { IPieceEvolution } from '../evolution/types';
 
 import { ResourceManager } from '../resources/ResourceManager';
+import { BASE_REWARD_FACTOR } from '../resources/premiumConfig';
+import {
+  BASE_MANA_RATE,
+  PAWN_MARCH_TE_MULTIPLIER,
+  DEFAULT_GENERATION_RATES,
+  DEFAULT_BONUS_MULTIPLIERS,
+  DEFAULT_DASH_CHANCE,
+  DEFAULT_QUEEN_MANA_REGEN,
+  DASH_CHANCE_STEP,
+  QUEEN_MANA_REGEN_STEP,
+  MAX_QUEEN_MANA_REGEN,
+} from '../resources/resourceConfig';
 import { PieceEvolutionSystem } from '../evolution/PieceEvolutionSystem';
 import { EvolutionTreeSystem } from '../evolution/EvolutionTreeSystem';
 import { ChessEngine } from '../engine/ChessEngine';
@@ -225,14 +237,10 @@ const initialResourceState: ResourceState = {
   aetherShards: 0,
   arcaneMana: 0,
   generationRates: {
-    temporalEssence: 1,
-    mnemonicDust: 0.1,
-    arcaneMana: 0.05,
+    ...DEFAULT_GENERATION_RATES,
   },
   bonusMultipliers: {
-    temporalEssence: 1,
-    mnemonicDust: 1,
-    arcaneMana: 1,
+    ...DEFAULT_BONUS_MULTIPLIERS,
   },
 };
 
@@ -277,6 +285,116 @@ try {
   (globalThis as any).chronoChessEngine = chessEngine;
 } catch (err) {
   // ignore in constrained environments
+}
+
+// Wire progress tracker achievements to award premium currency when unlocked
+import { progressTracker } from '../save/ProgressTracker';
+import { analyticsSystem } from '../save/AnalyticsSystem';
+import { showAchievement } from '../components/common/achievementModalService';
+import { setAchievementClaimHandler } from '../components/common/achievementClaimService';
+import { audioFeedbackSystem } from '../audio';
+try {
+  // If an achievement is unlocked via the progress tracker, award its aetherShards
+  progressTracker.setOnAchievementUnlocked((achievement: any) => {
+    try {
+      if (achievement && (achievement as any).reward && (achievement as any).reward.aetherShards) {
+        const shards = (achievement as any).reward.aetherShards;
+        resourceManager.awardResources({ aetherShards: shards });
+        console.log(`Awarded ${shards} Aether Shards for achievement: ${achievement.name}`);
+      }
+      // Analytics: track achievement unlock
+      try {
+        analyticsSystem
+          .trackAchievementUnlock(achievement)
+          .catch(err => console.warn('analytics.trackAchievementUnlock failed:', err));
+      } catch (err) {
+        console.warn('analyticsSystem not available:', err);
+      }
+
+      // UI: show toast
+      try {
+        showToast(`Achievement unlocked: ${achievement.name}`, {
+          level: 'success',
+          duration: 4000,
+        });
+      } catch (err) {
+        // Non-fatal if toast not available
+      }
+
+      // Rich UI for big achievements
+      try {
+        const isBig =
+          achievement.rarity === 'epic' ||
+          achievement.rarity === 'legendary' ||
+          ((achievement.reward && achievement.reward.aetherShards) || 0) >= 50;
+        if (isBig) {
+          showAchievement(achievement);
+        }
+      } catch (err) {
+        // Non-fatal
+      }
+    } catch (err) {
+      console.error('Failed to award achievement reward:', err);
+    }
+  });
+} catch (err) {
+  // Safe guard: if progressTracker import fails in a test environment, continue
+  console.warn('Could not wire progressTracker to resourceManager:', err);
+}
+
+// Register the claim handler used by the Achievement modal
+try {
+  setAchievementClaimHandler(async (achievement: any) => {
+    try {
+      // Only award if not already claimed
+      const alreadyClaimed = achievement.claimed;
+      if (alreadyClaimed) return;
+
+      const shards = (achievement.reward && achievement.reward.aetherShards) || 0;
+      if (shards > 0) {
+        resourceManager.awardResources({ aetherShards: shards });
+      }
+
+      // Play celebratory audio feedback (best-effort)
+      try {
+        audioFeedbackSystem
+          .playAchievementFeedback(achievement.id || 'achievement', achievement.rarity)
+          .catch(() => {});
+      } catch (err) {}
+
+      // Show toast summarizing what was awarded
+      try {
+        if (shards > 0) {
+          showToast(`+${shards} Aether Shards awarded!`, { level: 'success', duration: 3500 });
+        }
+
+        if (achievement.unlockedBooster) {
+          showToast(`Booster unlocked: ${achievement.unlockedBooster}`, {
+            level: 'success',
+            duration: 4500,
+          });
+        }
+      } catch (err) {
+        // non-fatal
+      }
+
+      // Analytics for claim
+      try {
+        analyticsSystem.trackAchievementUnlock({ ...achievement, claimed: true }).catch(() => {});
+      } catch {}
+
+      // Persist claimed state
+      try {
+        await progressTracker.markAchievementClaimed(achievement.id);
+      } catch (err) {
+        // best-effort
+      }
+    } catch (err) {
+      console.error('Achievement claim handler failed:', err);
+    }
+  });
+} catch (err) {
+  // ignore
 }
 // Use the simple sound player for basic audio effects
 
@@ -364,7 +482,7 @@ export const useGameStore = create<GameStore>()(
             // Award resources for the move
             if (result.eleganceScore && result.eleganceScore > 0) {
               const resourceGains = {
-                temporalEssence: Math.floor(result.eleganceScore * 0.1),
+                temporalEssence: Math.floor(result.eleganceScore * BASE_REWARD_FACTOR),
                 mnemonicDust: result.move.flags?.includes('c') ? 1 : 0,
               };
               get().awardResources(resourceGains);
@@ -895,11 +1013,11 @@ export const useGameStore = create<GameStore>()(
 
           // Calculate bonuses based on piece evolutions (matching HTML reference)
           let teBonus = 0;
-          let manaBonus = 0.05; // Base mana generation
+          let manaBonus = BASE_MANA_RATE; // Base mana generation
 
           // Pawn march speed affects temporal essence generation
           if (evolutions.pawn) {
-            teBonus += evolutions.pawn.marchSpeed * 0.1;
+            teBonus += evolutions.pawn.marchSpeed * PAWN_MARCH_TE_MULTIPLIER;
           }
 
           // Queen mana regen bonus affects arcane mana generation
@@ -908,8 +1026,8 @@ export const useGameStore = create<GameStore>()(
           }
 
           return {
-            temporalEssence: 1 + teBonus,
-            mnemonicDust: 0.1,
+            temporalEssence: DEFAULT_GENERATION_RATES.temporalEssence + teBonus,
+            mnemonicDust: DEFAULT_GENERATION_RATES.mnemonicDust,
             arcaneMana: manaBonus,
             aetherShards: 0, // Aether shards are not generated passively
           };
@@ -1120,7 +1238,7 @@ export const useGameStore = create<GameStore>()(
             promotionPreference: enhancedPieceEvolutions.pawn?.promotionPreference || 'q',
           },
           knight: {
-            dashChance: enhancedPieceEvolutions.knight?.dashChance || 0.1,
+            dashChance: enhancedPieceEvolutions.knight?.dashChance || DEFAULT_DASH_CHANCE,
             dashCooldown: enhancedPieceEvolutions.knight?.dashCooldown || 5,
           },
           bishop: {
@@ -1133,7 +1251,8 @@ export const useGameStore = create<GameStore>()(
           },
           queen: {
             dominanceAuraRange: enhancedPieceEvolutions.queen?.dominanceAuraRange || 1,
-            manaRegenBonus: enhancedPieceEvolutions.queen?.manaRegenBonus || 0.1,
+            manaRegenBonus:
+              enhancedPieceEvolutions.queen?.manaRegenBonus || DEFAULT_QUEEN_MANA_REGEN,
           },
           king: {
             royalDecreeUses: enhancedPieceEvolutions.king?.royalDecreeUses || 1,
@@ -1213,7 +1332,9 @@ export const useGameStore = create<GameStore>()(
                 const state = get();
                 const storeEvos = state.pieceEvolutions as any;
                 const dashActive =
-                  storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                  storeEvos &&
+                  storeEvos.knight &&
+                  (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                 if (dashActive) {
                   get().addToGameLog(`Knight DASH! ${fromSquare}->${toSquare}`);
                 } else {
@@ -1512,7 +1633,7 @@ export const useGameStore = create<GameStore>()(
                     knight: {
                       ...state.pieceEvolutions.knight,
                       dashChance: parseFloat(
-                        (state.pieceEvolutions.knight.dashChance + 0.05).toFixed(2)
+                        (state.pieceEvolutions.knight.dashChance + DASH_CHANCE_STEP).toFixed(2)
                       ),
                     },
                   },
@@ -1665,27 +1786,35 @@ export const useGameStore = create<GameStore>()(
             break;
 
           case 'queen-manaRegenBonus':
-            if (piece.manaRegenBonus < 1.0) {
+            if (piece.manaRegenBonus < MAX_QUEEN_MANA_REGEN) {
               cost = evolutionCosts.queen.manaRegenBonus(piece.manaRegenBonus);
               currency = currencyMap.manaRegenBonus;
               if (state.canAffordCost({ [currency]: cost })) {
-                set(state => ({
-                  pieceEvolutions: {
-                    ...state.pieceEvolutions,
-                    queen: {
-                      ...state.pieceEvolutions.queen,
-                      manaRegenBonus: parseFloat(
-                        (state.pieceEvolutions.queen.manaRegenBonus + 0.1).toFixed(1)
-                      ),
+                set(state => {
+                  const newVal = Math.min(
+                    MAX_QUEEN_MANA_REGEN,
+                    parseFloat(
+                      (state.pieceEvolutions.queen.manaRegenBonus + QUEEN_MANA_REGEN_STEP).toFixed(
+                        1
+                      )
+                    )
+                  );
+                  return {
+                    pieceEvolutions: {
+                      ...state.pieceEvolutions,
+                      queen: {
+                        ...state.pieceEvolutions.queen,
+                        manaRegenBonus: newVal,
+                      },
                     },
-                  },
-                }));
+                  };
+                });
                 success = true;
               } else {
                 errorMessage = `Need ${cost} ${currency.toUpperCase()}. You have ${Math.floor(state.resources[currency as keyof typeof state.resources] as number)}.`;
               }
             } else {
-              errorMessage = 'Max Mana Regen Bonus reached (1.0 AM/s).';
+              errorMessage = `Max Mana Regen Bonus reached (${MAX_QUEEN_MANA_REGEN} AM/s).`;
             }
             break;
 
@@ -2326,7 +2455,9 @@ export const useGameStore = create<GameStore>()(
                   switch (enhanceId) {
                     case 'knight-dash':
                     case 'dash':
-                      allowed = storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                      allowed =
+                        storeEvos.knight &&
+                        (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                       break;
                     case 'rook-entrench':
                     case 'entrenchment':
@@ -2440,7 +2571,7 @@ export const useGameStore = create<GameStore>()(
             // **ENHANCED: Award bonus resources for enhanced moves**
             if (result.eleganceScore && result.eleganceScore > 0) {
               const resourceGains: any = {
-                temporalEssence: Math.floor(result.eleganceScore * 0.1),
+                temporalEssence: Math.floor(result.eleganceScore * BASE_REWARD_FACTOR),
                 mnemonicDust: result.move.flags?.includes('c') ? 1 : 0,
               };
 
@@ -3150,7 +3281,9 @@ export const useGameStore = create<GameStore>()(
               try {
                 const storeEvos = state.pieceEvolutions as any;
                 const active =
-                  storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                  storeEvos &&
+                  storeEvos.knight &&
+                  (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                 if (active) {
                   get().addToGameLog(
                     `🎯 KNIGHT DASH ACTIVATED! Your knight at ${move.to} can make a bonus move! Click the knight to execute.`
@@ -3176,7 +3309,7 @@ export const useGameStore = create<GameStore>()(
                 try {
                   const active =
                     state.pieceEvolutions.knight &&
-                    (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                    (state.pieceEvolutions.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                   if (active && renderer.triggerKnightDashVFX) {
                     renderer.triggerKnightDashVFX(move.to, move.to); // Self-highlight to show available dash
                   }
@@ -3218,7 +3351,9 @@ export const useGameStore = create<GameStore>()(
                 try {
                   const storeEvos = state.pieceEvolutions as any;
                   const active =
-                    storeEvos && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                    storeEvos &&
+                    storeEvos.knight &&
+                    (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                   if (active) {
                     get().addToGameLog(
                       `🤖 AI KNIGHT DASH! ${dashMove.from}->${dashMove.to} (Gained extra move advantage!)`
@@ -3244,7 +3379,7 @@ export const useGameStore = create<GameStore>()(
                   try {
                     const active =
                       state.pieceEvolutions.knight &&
-                      (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                      (state.pieceEvolutions.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                     if (active && renderer.triggerKnightDashVFX) {
                       renderer.triggerKnightDashVFX(move.to, dashMove.to);
                     }
@@ -3492,7 +3627,9 @@ export const useGameStore = create<GameStore>()(
                   switch (abilityId) {
                     case 'knight-dash':
                     case 'dash':
-                      return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
+                      return !!(
+                        storeEvos.knight && (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE
+                      );
                     case 'enhanced-march':
                       return !!(storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1);
                     case 'breakthrough':
@@ -3616,7 +3753,7 @@ export const useGameStore = create<GameStore>()(
               switch (id) {
                 case 'knight-dash':
                 case 'dash':
-                  if (storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1)
+                  if (storeEvos.knight && (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE)
                     anyAbilityActive = true;
                   break;
                 case 'enhanced-march':
@@ -3690,7 +3827,8 @@ export const useGameStore = create<GameStore>()(
               switch (abilityId) {
                 case 'knight-dash':
                 case 'dash':
-                  abilityActive = storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1;
+                  abilityActive =
+                    storeEvos.knight && (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                   break;
                 case 'enhanced-march':
                   abilityActive = storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1;
@@ -4046,7 +4184,11 @@ export const useGameStore = create<GameStore>()(
         // in the final set — but only if the engine considers them legal.
         try {
           const storeEvos = state.pieceEvolutions as any;
-          if (piece.type === 'n' && storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1) {
+          if (
+            piece.type === 'n' &&
+            storeEvos.knight &&
+            (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE
+          ) {
             const dashTargets = get().generateKnightDashMoves(square);
             for (const t of dashTargets) {
               if (!filteredEnhancedMoves.some(m => m.to === t)) {
@@ -4775,7 +4917,7 @@ export const useGameStore = create<GameStore>()(
               try {
                 const active =
                   state.pieceEvolutions.knight &&
-                  (state.pieceEvolutions.knight.dashChance || 0) > 0.1;
+                  (state.pieceEvolutions.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
                 if (active && renderer.triggerKnightDashVFX) {
                   renderer.triggerKnightDashVFX(fromSquare, selectedMove.to);
                 }
@@ -5187,7 +5329,7 @@ export const useGameStore = create<GameStore>()(
               promotionPreference: state.pieceEvolutions.pawn?.promotionPreference || 'q',
             },
             knight: {
-              dashChance: state.pieceEvolutions.knight?.dashChance || 0.1,
+              dashChance: state.pieceEvolutions.knight?.dashChance || DEFAULT_DASH_CHANCE,
               dashCooldown: state.pieceEvolutions.knight?.dashCooldown || 5,
             },
             bishop: {
@@ -5200,7 +5342,8 @@ export const useGameStore = create<GameStore>()(
             },
             queen: {
               dominanceAuraRange: state.pieceEvolutions.queen?.dominanceAuraRange || 2,
-              manaRegenBonus: state.pieceEvolutions.queen?.manaRegenBonus || 0,
+              manaRegenBonus:
+                state.pieceEvolutions.queen?.manaRegenBonus || DEFAULT_QUEEN_MANA_REGEN,
             },
             king: {
               royalDecreeUses: state.pieceEvolutions.king?.royalDecreeUses || 0,

@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../../store';
+import {
+  PAWN_MARCH_TE_MULTIPLIER,
+  DEFAULT_GENERATION_RATES,
+  BASE_MANA_RATE,
+} from '../../resources/resourceConfig';
 import { Button } from '../../components/common';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import type { SceneProps } from '../types';
@@ -21,8 +26,10 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   }, []);
 
   // Calculate generation rates based on piece evolutions
-  const teRate = 1 + pieceEvolutions.pawn.marchSpeed * 0.1;
-  const amRate = 0.05 + pieceEvolutions.queen.manaRegenBonus;
+  const teRate =
+    DEFAULT_GENERATION_RATES.temporalEssence +
+    pieceEvolutions.pawn.marchSpeed * PAWN_MARCH_TE_MULTIPLIER;
+  const amRate = BASE_MANA_RATE + pieceEvolutions.queen.manaRegenBonus;
 
   return (
     <div className="menu-scene scene">
@@ -50,7 +57,9 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
           <div className="menu-scene__stat">
             <span className="menu-scene__stat-value">{Math.floor(resources.mnemonicDust)}</span>
             <span className="menu-scene__stat-label">Mnemonic Dust</span>
-            <span className="menu-scene__stat-rate">+{(0.1).toFixed(1)}/s</span>
+            <span className="menu-scene__stat-rate">
+              +{DEFAULT_GENERATION_RATES.mnemonicDust.toFixed(1)}/s
+            </span>
           </div>
           <div
             className={`menu-scene__stat ${showResourceGains ? 'menu-scene__stat--gaining' : ''}`}

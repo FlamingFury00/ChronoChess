@@ -33,6 +33,8 @@ export interface PieceEvolutionData {
 }
 
 // Default piece evolution data matching HTML reference
+import { DEFAULT_DASH_CHANCE, DEFAULT_QUEEN_MANA_REGEN } from '../resources/resourceConfig';
+
 export const getDefaultPieceEvolutions = (): PieceEvolutionData => ({
   pawn: {
     marchSpeed: 1,
@@ -40,7 +42,7 @@ export const getDefaultPieceEvolutions = (): PieceEvolutionData => ({
     promotionPreference: 'q',
   },
   knight: {
-    dashChance: 0.1,
+    dashChance: DEFAULT_DASH_CHANCE,
     dashCooldown: 5,
   },
   bishop: {
@@ -53,7 +55,7 @@ export const getDefaultPieceEvolutions = (): PieceEvolutionData => ({
   },
   queen: {
     dominanceAuraRange: 1,
-    manaRegenBonus: 0.1,
+    manaRegenBonus: DEFAULT_QUEEN_MANA_REGEN,
   },
   king: {
     royalDecreeUses: 1,
@@ -62,33 +64,47 @@ export const getDefaultPieceEvolutions = (): PieceEvolutionData => ({
 });
 
 // Evolution cost calculation functions matching HTML reference
+// Global multiplier to scale evolution costs (increase to make progression harder)
+// Raised from 1.6 to 2.5 to make evolutions significantly more expensive
+const EVOLUTION_COST_MULTIPLIER = 2.5;
+
 export const evolutionCosts = {
   pawn: {
-    marchSpeed: (level: number) => Math.ceil(10 * Math.pow(1.5, level - 1)),
-    resilience: (level: number) => Math.ceil(5 * Math.pow(2, level)),
-    setPromotionPreference: () => 20,
+    marchSpeed: (level: number) =>
+      Math.ceil(10 * Math.pow(1.5, level - 1) * EVOLUTION_COST_MULTIPLIER),
+    resilience: (level: number) => Math.ceil(5 * Math.pow(2, level) * EVOLUTION_COST_MULTIPLIER),
+    setPromotionPreference: () => Math.ceil(20 * EVOLUTION_COST_MULTIPLIER),
   },
   knight: {
-    dashChance: (chance: number) => Math.ceil(15 * Math.pow(1.8, Math.floor((chance / 0.05) * 20))),
-    dashCooldown: (cooldown: number) => Math.ceil(10 * Math.pow(1.6, 5 - cooldown)),
+    dashChance: (chance: number) =>
+      Math.ceil(15 * Math.pow(1.8, Math.floor((chance / 0.05) * 20)) * EVOLUTION_COST_MULTIPLIER),
+    dashCooldown: (cooldown: number) =>
+      Math.ceil(10 * Math.pow(1.6, 5 - cooldown) * EVOLUTION_COST_MULTIPLIER),
   },
   bishop: {
-    snipeRange: (range: number) => Math.ceil(12 * Math.pow(1.6, range)),
-    consecrationTurns: (turns: number) => Math.ceil(15 * Math.pow(1.7, 3 - turns)),
+    snipeRange: (range: number) => Math.ceil(12 * Math.pow(1.6, range) * EVOLUTION_COST_MULTIPLIER),
+    consecrationTurns: (turns: number) =>
+      Math.ceil(15 * Math.pow(1.7, 3 - turns) * EVOLUTION_COST_MULTIPLIER),
   },
   rook: {
-    entrenchThreshold: (threshold: number) => Math.ceil(12 * Math.pow(1.7, 3 - threshold)),
-    entrenchPower: (power: number) => Math.ceil(18 * Math.pow(1.9, power)),
+    entrenchThreshold: (threshold: number) =>
+      Math.ceil(12 * Math.pow(1.7, 3 - threshold) * EVOLUTION_COST_MULTIPLIER),
+    entrenchPower: (power: number) =>
+      Math.ceil(18 * Math.pow(1.9, power) * EVOLUTION_COST_MULTIPLIER),
   },
   queen: {
-    dominanceAuraRange: (range: number) => Math.ceil(25 * Math.pow(2, range)),
+    dominanceAuraRange: (range: number) =>
+      Math.ceil(25 * Math.pow(2, range) * EVOLUTION_COST_MULTIPLIER),
     manaRegenBonus: (bonus: number) =>
-      Math.ceil(20 * Math.pow(1.8, Math.floor((bonus / 0.1) * 10))),
+      Math.ceil(20 * Math.pow(1.8, Math.floor((bonus / 0.1) * 10)) * EVOLUTION_COST_MULTIPLIER),
   },
   king: {
-    royalDecreeUses: (uses: number) => Math.ceil(50 * Math.pow(2.5, uses)),
+    royalDecreeUses: (uses: number) =>
+      Math.ceil(50 * Math.pow(2.5, uses) * EVOLUTION_COST_MULTIPLIER),
     lastStandThreshold: (threshold: number) =>
-      Math.ceil(30 * Math.pow(1.5, Math.floor((threshold / 0.05) * 20))),
+      Math.ceil(
+        30 * Math.pow(1.5, Math.floor((threshold / 0.05) * 20)) * EVOLUTION_COST_MULTIPLIER
+      ),
   },
 };
 

@@ -494,6 +494,12 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                   addToGameLog(
                     '⚠️ Not enough Aether Shards to buy Sparkle Trail (5 Aether Shards).'
                   );
+                  try {
+                    showToast('Not enough Aether Shards — Sparkle Trail costs 5 AS', {
+                      level: 'error',
+                      duration: 4000,
+                    });
+                  } catch (err) {}
                   return;
                 }
 
@@ -519,6 +525,11 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                   }
                 } else {
                   addToGameLog('❌ Failed to spend Aether Shards. Purchase cancelled.');
+                  try {
+                    showToast('Purchase failed — could not spend Aether Shards', {
+                      level: 'error',
+                    });
+                  } catch (err) {}
                 }
               }}
               variant="secondary"

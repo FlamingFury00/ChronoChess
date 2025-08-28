@@ -12,9 +12,21 @@ export class ProgressTracker {
   private statisticsCache: PlayerStatistics | null = null;
   private achievementsCache: Achievement[] = [];
   private isInitialized = false;
+  // Optional callback invoked when an achievement is unlocked. This allows the
+  // rest of the app (for example ResourceManager) to award rewards or show UI.
+  private onAchievementUnlocked?: (achievement: Achievement) => void;
 
-  constructor() {
+  constructor(options?: { onAchievementUnlocked?: (achievement: Achievement) => void }) {
     this.db = saveDatabase;
+    this.onAchievementUnlocked = options?.onAchievementUnlocked;
+  }
+
+  /**
+   * Register or replace the on-achievement-unlocked callback.
+   * Useful for wiring ProgressTracker to other systems (ResourceManager, Analytics, UI).
+   */
+  public setOnAchievementUnlocked(callback?: (achievement: Achievement) => void): void {
+    this.onAchievementUnlocked = callback;
   }
 
   /**
@@ -225,6 +237,7 @@ export class ProgressTracker {
     const unlockedAchievement: Achievement = {
       ...achievement,
       unlockedTimestamp: Date.now(),
+      claimed: false,
     };
 
     // Add to cache
@@ -233,7 +246,36 @@ export class ProgressTracker {
     // Save to database
     await this.db.save('achievements', achievementId, unlockedAchievement);
 
+    // Notify any registered listener so other systems can react (award currency, UI, analytics)
+    try {
+      if (this.onAchievementUnlocked) {
+        this.onAchievementUnlocked(unlockedAchievement);
+      }
+    } catch (err) {
+      console.error('onAchievementUnlocked callback failed:', err);
+    }
+
     console.log(`Achievement unlocked: ${achievement.name}`);
+    return true;
+  }
+
+  /**
+   * Mark an unlocked achievement as claimed (persisted).
+   */
+  async markAchievementClaimed(achievementId: string): Promise<boolean> {
+    if (!this.isInitialized) {
+      throw new Error('Progress tracker not initialized');
+    }
+
+    const idx = this.achievementsCache.findIndex(a => a.id === achievementId);
+    if (idx === -1) return false;
+
+    const ach = this.achievementsCache[idx];
+    if (ach.claimed) return false;
+
+    ach.claimed = true;
+    this.achievementsCache[idx] = ach;
+    await this.db.save('achievements', achievementId, ach);
     return true;
   }
 
@@ -599,6 +641,7 @@ export class ProgressTracker {
         description: 'Create a combination with over 1000 total power',
         category: 'evolution',
         rarity: 'rare',
+        reward: { aetherShards: 20 },
       },
       synergy_master: {
         id: 'synergy_master',
@@ -606,6 +649,7 @@ export class ProgressTracker {
         description: 'Discover a combination with synergy bonuses',
         category: 'evolution',
         rarity: 'rare',
+        reward: { aetherShards: 30 },
       },
       combination_collector: {
         id: 'combination_collector',
@@ -613,6 +657,7 @@ export class ProgressTracker {
         description: 'Discover 100 unique evolution combinations',
         category: 'evolution',
         rarity: 'epic',
+        reward: { aetherShards: 50 },
       },
     };
 

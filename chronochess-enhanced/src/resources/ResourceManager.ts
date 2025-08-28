@@ -9,6 +9,14 @@ import type {
   PremiumCurrencyReward,
 } from './types';
 import { PremiumCurrencySystem } from './PremiumCurrencySystem';
+import { BASE_REWARD_FACTOR } from './premiumConfig';
+import {
+  DEFAULT_GENERATION_RATES,
+  DEFAULT_BONUS_MULTIPLIERS,
+  DEFAULT_OFFLINE_EFFICIENCY,
+  DEFAULT_MAX_OFFLINE_HOURS,
+  DEFAULT_GENERATION_TICK_RATE,
+} from './resourceConfig';
 
 export class ResourceManager {
   private resources: ResourceState;
@@ -20,9 +28,9 @@ export class ResourceManager {
   constructor(config?: Partial<ResourceConfig>) {
     this.lastUpdateTime = Date.now();
     this.config = {
-      maxOfflineHours: 24,
-      offlineEfficiency: 0.8,
-      generationTickRate: 1000,
+      maxOfflineHours: DEFAULT_MAX_OFFLINE_HOURS,
+      offlineEfficiency: DEFAULT_OFFLINE_EFFICIENCY,
+      generationTickRate: DEFAULT_GENERATION_TICK_RATE,
       ...config,
     };
 
@@ -33,16 +41,8 @@ export class ResourceManager {
       mnemonicDust: 0,
       aetherShards: 0,
       arcaneMana: 0,
-      generationRates: {
-        temporalEssence: 1, // 1 per second base rate
-        mnemonicDust: 0.1,
-        arcaneMana: 0.05,
-      },
-      bonusMultipliers: {
-        temporalEssence: 1,
-        mnemonicDust: 1,
-        arcaneMana: 1,
-      },
+      generationRates: { ...DEFAULT_GENERATION_RATES },
+      bonusMultipliers: { ...DEFAULT_BONUS_MULTIPLIERS },
     };
   }
 
@@ -231,7 +231,8 @@ export class ResourceManager {
 
   // Premium currency
   awardPremiumCurrency(eleganceScore: number): number {
-    const aetherShards = Math.floor(eleganceScore * 0.1); // 10% of elegance score
+    // Elegance -> shard conversion using centralized base factor
+    const aetherShards = Math.floor(eleganceScore * BASE_REWARD_FACTOR);
     this.resources.aetherShards += aetherShards;
     return aetherShards;
   }
@@ -319,14 +320,10 @@ export class ResourceManager {
       aetherShards: 0,
       arcaneMana: 0,
       generationRates: {
-        temporalEssence: 1,
-        mnemonicDust: 0.1,
-        arcaneMana: 0.05,
+        ...DEFAULT_GENERATION_RATES,
       },
       bonusMultipliers: {
-        temporalEssence: 1,
-        mnemonicDust: 1,
-        arcaneMana: 1,
+        ...DEFAULT_BONUS_MULTIPLIERS,
       },
     };
     this.lastUpdateTime = Date.now();

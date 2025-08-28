@@ -1,97 +1,3 @@
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { describe } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { it } from 'vitest';
-import { expect } from 'vitest';
-import { expect } from 'vitest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ResourceManager } from '../ResourceManager';
 import type { ResourceCost, ResourceGains, GenerationBonus } from '../types';
@@ -347,8 +253,8 @@ describe('ResourceManager', () => {
       const eleganceScore = 100;
       const awarded = resourceManager.awardPremiumCurrency(eleganceScore);
 
-      expect(awarded).toBe(10); // 10% of elegance score
-      expect(resourceManager.getResourceAmount('aetherShards')).toBe(10);
+      expect(awarded).toBe(5); // 5% of elegance score (BASE_REWARD_FACTOR)
+      expect(resourceManager.getResourceAmount('aetherShards')).toBe(5);
     });
 
     it('should validate premium purchases', () => {
@@ -425,7 +331,7 @@ describe('ResourceManager', () => {
   });
 
   describe('Temporary Bonuses', () => {
-    it('should apply temporary bonuses with duration', done => {
+    it('should apply temporary bonuses with duration', async () => {
       const bonus: GenerationBonus = {
         resource: 'temporalEssence',
         multiplier: 2,
@@ -439,11 +345,9 @@ describe('ResourceManager', () => {
       expect(state.bonusMultipliers.temporalEssence).toBe(2);
 
       // Check that bonus is removed after duration
-      setTimeout(() => {
-        state = resourceManager.getResourceState();
-        expect(state.bonusMultipliers.temporalEssence).toBe(1);
-        done();
-      }, 150);
+      await new Promise<void>(resolve => setTimeout(resolve, 150));
+      state = resourceManager.getResourceState();
+      expect(state.bonusMultipliers.temporalEssence).toBe(1);
     });
   });
 

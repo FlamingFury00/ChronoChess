@@ -48,6 +48,12 @@ export interface Achievement {
   unlockedTimestamp: number;
   category: 'gameplay' | 'evolution' | 'special';
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  // Optional reward applied when this achievement is unlocked (e.g. premium currency)
+  reward?: {
+    aetherShards?: number;
+  };
+  // Whether the player has claimed the reward for this achievement
+  claimed?: boolean;
 }
 
 // Unlocked content tracking
