@@ -23,8 +23,6 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({
         return '☀️';
       case 'dark':
         return '🌙';
-      case 'auto':
-        return '⚡';
       case 'current':
         return actualTheme === 'light' ? '☀️' : '🌙';
       default:
@@ -38,8 +36,6 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({
         return 'Light';
       case 'dark':
         return 'Dark';
-      case 'auto':
-        return 'Auto';
       default:
         return 'Dark';
     }
@@ -75,7 +71,6 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({
         >
           <option value="dark">🌙 Dark</option>
           <option value="light">☀️ Light</option>
-          <option value="auto">⚡ Auto</option>
         </select>
         {showLabel && <label className="theme-toggle__label">Theme: {getThemeLabel(theme)}</label>}
       </div>
@@ -86,7 +81,7 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({
     return (
       <div className={themeToggleClass}>
         <div className="theme-toggle__switch-container">
-          {['dark', 'auto', 'light'].map(themeOption => (
+          {(['dark', 'light'] as Theme[]).map(themeOption => (
             <button
               key={themeOption}
               onClick={() => handleThemeChange(themeOption as Theme)}
@@ -109,7 +104,7 @@ const ThemeToggle: React.FC<ThemeToggleProps> = ({
           <div
             className="theme-toggle__switch-indicator"
             style={{
-              transform: `translateX(${['dark', 'auto', 'light'].indexOf(theme) * 100}%)`,
+              transform: `translateX(${(['dark', 'light'] as Theme[]).indexOf(theme) * 100}%)`,
             }}
           />
         </div>

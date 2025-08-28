@@ -151,6 +151,16 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
     return names[resourceType] || resourceType;
   };
 
+  const getResourceAbbr = (resourceType: string): string => {
+    const abbr: Record<string, string> = {
+      temporalEssence: 'TE',
+      mnemonicDust: 'MD',
+      aetherShards: 'AS',
+      arcaneMana: 'AM',
+    };
+    return abbr[resourceType] || resourceType.slice(0, 2).toUpperCase();
+  };
+
   const resourceDisplayClass = [
     'resource-display',
     compact && 'resource-display--compact',
@@ -181,6 +191,10 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
                   {getResourceIcon(resourceType)}
                 </span>
                 <span className="resource-display__name">{getResourceName(resourceType)}</span>
+                {/* Short abbreviation shown on mobile to save horizontal space */}
+                <span className="resource-display__abbr" aria-hidden="true">
+                  {getResourceAbbr(resourceType)}
+                </span>
               </div>
 
               <div className="resource-display__value">

@@ -123,6 +123,7 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         <footer className="menu-scene__footer">
           <div className="menu-scene__footer-content">
             <div className="menu-scene__theme-controls">
+              {/* Only show Light/Dark on the home page */}
               <ThemeToggle variant="switch" size="small" showLabel={false} />
             </div>
             <p className="menu-scene__version">ChronoChess v1.0</p>

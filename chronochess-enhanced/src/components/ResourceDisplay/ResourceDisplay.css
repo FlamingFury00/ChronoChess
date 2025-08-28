@@ -2,6 +2,8 @@
 .resource-display {
   --resource-color: var(--accent-primary);
   position: relative;
+  width: 100%;
+  box-sizing: border-box; /* ensure padding doesn't cause overflow */
 }
 
 /* Enhanced container with modern layout */
@@ -123,6 +125,16 @@
   text-transform: uppercase;
   opacity: 0.9;
   transition: color var(--duration-normal) var(--ease-out);
+}
+
+.resource-display__abbr {
+  display: none;
+  position: relative;
+  z-index: 1;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  margin-left: 4px;
 }
 
 .resource-display__item:hover .resource-display__name {
@@ -377,6 +389,7 @@
     overflow-x: auto;
     overflow-y: hidden;
     padding: var(--spacing-sm) var(--spacing-md);
+    -webkit-overflow-scrolling: touch; /* smoother touch scroll on iOS/Android */
 
     /* Custom scrollbar */
     scrollbar-width: thin;
@@ -397,17 +410,29 @@
   }
 
   .resource-display__item {
-    min-width: 120px;
+    min-width: 64px; /* condensed for mobile - slightly smaller to fit more items */
     flex-shrink: 0;
-    padding: var(--spacing-sm);
+    padding: var(--spacing-xs);
+    /* make each item compact and horizontally oriented */
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-xs);
   }
 
+  /* Show short abbreviations on mobile and hide full names to preserve space */
   .resource-display__name {
+    display: none;
+  }
+
+  .resource-display__abbr {
+    display: inline-block;
     font-size: 0.75rem;
+    color: var(--text-secondary);
+    opacity: 0.9;
   }
 
   .resource-display__amount {
-    font-size: var(--font-size-base);
+    font-size: 0.95rem;
   }
 
   .resource-display__rate {
@@ -417,6 +442,25 @@
   /* Reduce animations on mobile for performance */
   .resource-display__item::before {
     display: none;
+  }
+
+  /* Make icon smaller and inline with amount to save horizontal space */
+  .resource-display__icon {
+    font-size: 1.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* Arrange amount and rate in a single column with tight spacing */
+  .resource-display__value {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  /* Slightly reduce multiplier container on mobile */
+  .resource-display__multipliers {
+    display: none; /* hide multipliers on small screens to save space */
   }
 }
 

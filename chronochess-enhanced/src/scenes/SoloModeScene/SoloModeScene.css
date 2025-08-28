@@ -711,6 +711,7 @@
     gap: 0.75rem;
     /* Prevent header from being sticky on mobile */
     position: relative;
+    overflow: visible; /* allow child elements like ResourceDisplay to be fully visible */
   }
 
   .solo-mode-scene__title {

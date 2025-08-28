@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type Theme = 'light' | 'dark' | 'auto';
+export type Theme = 'light' | 'dark';
 
 interface ThemeConfig {
   theme: Theme;
@@ -16,64 +16,19 @@ const THEME_STORAGE_KEY = 'chronochess-theme';
  * and automatic system preference detection
  */
 export const useTheme = (): ThemeConfig => {
-  // Initialize theme from localStorage or default to 'auto'
+  // Initialize theme from localStorage or default to 'dark'
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window === 'undefined') return 'dark'; // SSR fallback
 
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme;
-    return savedTheme || 'dark'; // Default to dark for gaming aesthetic
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+    return savedTheme === 'light' || savedTheme === 'dark' ? (savedTheme as Theme) : 'dark';
   });
 
-  // Calculate actual theme based on preference and system settings
+  // actualTheme mirrors theme directly since we no longer support 'auto'
   const [actualTheme, setActualTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window === 'undefined') return 'dark';
-
-    if (theme === 'auto') {
-      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    }
     return theme === 'light' ? 'light' : 'dark';
   });
-
-  // Update actual theme when system preference changes (auto mode)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-
-    const handleChange = (e: MediaQueryListEvent) => {
-      if (theme === 'auto') {
-        setActualTheme(e.matches ? 'light' : 'dark');
-      }
-    };
-
-    // Listen for system theme changes
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', handleChange);
-    } else {
-      // Fallback for older browsers
-      mediaQuery.addListener(handleChange);
-    }
-
-    return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', handleChange);
-      } else {
-        mediaQuery.removeListener(handleChange);
-      }
-    };
-  }, [theme]);
-
-  // Update actual theme when theme preference changes
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    if (theme === 'auto') {
-      const isLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-      setActualTheme(isLight ? 'light' : 'dark');
-    } else {
-      setActualTheme(theme === 'light' ? 'light' : 'dark');
-    }
-  }, [theme]);
 
   // Apply theme to document and store in localStorage
   useEffect(() => {
@@ -104,21 +59,17 @@ export const useTheme = (): ThemeConfig => {
 
   // Theme setter with validation
   const setTheme = useCallback((newTheme: Theme) => {
-    if (['light', 'dark', 'auto'].includes(newTheme)) {
+    if (newTheme === 'light' || newTheme === 'dark') {
       setThemeState(newTheme);
+      setActualTheme(newTheme === 'light' ? 'light' : 'dark');
     }
   }, []);
 
   // Toggle between light and dark (skips auto)
   const toggleTheme = useCallback(() => {
-    setThemeState(current => {
-      if (current === 'auto') {
-        // If currently auto, switch to the opposite of current actual theme
-        return actualTheme === 'light' ? 'dark' : 'light';
-      }
-      return current === 'light' ? 'dark' : 'light';
-    });
-  }, [actualTheme]);
+    setThemeState(current => (current === 'light' ? 'dark' : 'light'));
+    setActualTheme(current => (current === 'light' ? 'dark' : 'light'));
+  }, []);
 
   return {
     theme,
@@ -137,7 +88,7 @@ export const getCurrentTheme = (): 'light' | 'dark' => {
 
   const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme;
 
-  if (!savedTheme || savedTheme === 'auto') {
+  if (!savedTheme) {
     return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   }
 

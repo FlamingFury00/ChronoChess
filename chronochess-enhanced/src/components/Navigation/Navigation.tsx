@@ -200,9 +200,7 @@ const Navigation: React.FC<NavigationProps> = ({
           {currentItem ? currentItem.label : 'ChronoChess'}
         </div>
 
-        <div className="navigation__condensed-actions">
-          <ThemeToggle variant="button" size="small" />
-        </div>
+        <div className="navigation__condensed-actions" />
       </div>
     );
   };

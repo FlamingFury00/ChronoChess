@@ -118,6 +118,7 @@
   background: var(--bg-glass-strong);
   border-radius: var(--radius-full);
   padding: var(--spacing-xs);
+  overflow: hidden; /* ensure the indicator is clipped to the rounded container */
 }
 
 .theme-toggle__switch-option {
@@ -150,8 +151,10 @@
   position: absolute;
   top: var(--spacing-xs);
   left: var(--spacing-xs);
-  width: calc(33.333% - var(--spacing-xs));
-  height: calc(100% - var(--spacing-xs) * 2);
+  /* For a two-option switch the indicator should occupy half the available width
+     minus the horizontal padding so it aligns under each option when translated. */
+  width: calc((100% - (var(--spacing-xs) * 2)) / 2);
+  height: calc(100% - (var(--spacing-xs) * 2));
   background: var(--accent-primary);
   border-radius: var(--radius-full);
   transition: transform var(--duration-normal) var(--ease-out);
