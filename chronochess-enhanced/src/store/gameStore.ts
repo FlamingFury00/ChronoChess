@@ -174,6 +174,9 @@ interface GameStore extends AppState {
   getEnhancedValidMoves: (square?: string) => Move[]; // Enhanced moves with ability effects
   processPlayerKnightDash: (fromSquare: string, targetSquare?: string) => boolean;
 
+  // Transient flag: if true, perform a save once the current match/encounter ends
+  pendingSaveOnMatchEnd: boolean;
+
   // Helper methods for enhanced moves
   generateAbilityMoves: (square: string, ability: any, pieceType: string) => any[];
   generateEntrenchedRookMoves: (square: string) => string[];
@@ -310,6 +313,7 @@ export const useGameStore = create<GameStore>()(
       manualModePieceStates: {},
       manualModeLastMove: null,
       pendingPlayerDashMove: null,
+      pendingSaveOnMatchEnd: false,
       evolutionTreeSystem: evolutionTreeSystem,
       unlockedEvolutions: new Set<string>(),
       pieceEvolutions: getDefaultPieceEvolutions(),
@@ -737,7 +741,17 @@ export const useGameStore = create<GameStore>()(
 
       saveToStorage: (key = DEFAULT_SAVE_KEY) => {
         try {
-          const saveData = get().serialize();
+          const state = get();
+
+          // Do not save while a match/encounter is active to avoid inconsistent snapshots
+          if (state.isManualGameActive || state.autoBattleSystem) {
+            console.log('⏸️ Skipping saveToStorage while a match/encounter is active');
+            // Mark a pending save so we persist once the match ends
+            set({ pendingSaveOnMatchEnd: true });
+            return;
+          }
+
+          const saveData = state.serialize();
 
           // Defensive: localStorage may not be available in some test or server
           // environments. Guard against ReferenceError and silently skip saving
@@ -1327,6 +1341,19 @@ export const useGameStore = create<GameStore>()(
           autoBattleSystem: null,
           gameLog: [...state.gameLog, outcomeMessage, 'The timeline stabilizes... for now.'],
         });
+
+        // If a save was requested during the encounter, perform it now
+        setTimeout(() => {
+          const s = get();
+          if (s.pendingSaveOnMatchEnd) {
+            set({ pendingSaveOnMatchEnd: false });
+            try {
+              s.saveToStorage();
+            } catch (err) {
+              console.warn('Deferred save after encounter failed:', err);
+            }
+          }
+        }, 200);
       },
 
       getSoloModeStats: () => {
@@ -1921,6 +1948,19 @@ export const useGameStore = create<GameStore>()(
           selectedSquare: null,
           validMoves: [],
         });
+
+        // If a save was requested while the manual game was active, perform it now
+        setTimeout(() => {
+          const s = get();
+          if (s.pendingSaveOnMatchEnd) {
+            set({ pendingSaveOnMatchEnd: false });
+            try {
+              s.saveToStorage();
+            } catch (err) {
+              console.warn('Deferred save after manual game failed:', err);
+            }
+          }
+        }, 200);
 
         try {
           if (victory === true) showToast('Victory! Rewards added.', { level: 'success' });
@@ -2712,15 +2752,40 @@ export const useGameStore = create<GameStore>()(
         }
         const movedPiece = chess.get(move.to as any);
         if (movedPiece) {
+          // If this piece had a previous state (moved from another square, or existed in saved state),
+          // preserve its unlocked/earned ability flags. Only reset turnsStationary because the piece moved.
+          const prevState = state.manualModePieceStates[move.from];
+          const existingState = state.manualModePieceStates[move.to];
+
           state.manualModePieceStates[move.to] = {
             type: movedPiece.type,
             color: movedPiece.color,
+            // Reset stationary counter because the piece has just moved
             turnsStationary: 0,
-            isEntrenched: false,
-            isConsecratedSource: false,
-            isReceivingConsecration: false,
-            isDominated: false,
+            // Preserve ability flags from previous location if present, otherwise keep any existing state at the destination,
+            // or default to false. This ensures unlocked abilities persist across moves.
+            isEntrenched:
+              (prevState && prevState.isEntrenched) ||
+              (existingState && existingState.isEntrenched) ||
+              false,
+            isConsecratedSource:
+              (prevState && prevState.isConsecratedSource) ||
+              (existingState && existingState.isConsecratedSource) ||
+              false,
+            isReceivingConsecration:
+              (prevState && prevState.isReceivingConsecration) ||
+              (existingState && existingState.isReceivingConsecration) ||
+              false,
+            isDominated:
+              (prevState && prevState.isDominated) ||
+              (existingState && existingState.isDominated) ||
+              false,
           };
+
+          // If we moved from a square and the previous state existed, remove the old entry (we already copied its flags)
+          if (move.from && state.manualModePieceStates[move.from]) {
+            delete state.manualModePieceStates[move.from];
+          }
         }
 
         // Increment stationary turns for pieces that didn't move
@@ -2853,20 +2918,45 @@ export const useGameStore = create<GameStore>()(
         const board = chess.board();
         const pieceStates: any = {};
 
+        // Grab any previously-saved manualModePieceStates so we can seed persisted abilities
+        const savedStates = get().manualModePieceStates || {};
+
         for (let row = 0; row < 8; row++) {
           for (let col = 0; col < 8; col++) {
             const piece = board[row][col];
             if (piece) {
               const square = String.fromCharCode(97 + col) + (8 - row).toString();
-              pieceStates[square] = {
-                type: piece.type,
-                color: piece.color,
-                turnsStationary: 0,
-                isEntrenched: false,
-                isConsecratedSource: false,
-                isReceivingConsecration: false,
-                isDominated: false,
-              };
+
+              // If there is a saved state for this square (from load/deserialize), reuse it
+              const saved = savedStates[square];
+
+              if (saved) {
+                // Preserve turnsStationary and ability flags from saved state but ensure type/color
+                pieceStates[square] = {
+                  type: piece.type,
+                  color: piece.color,
+                  turnsStationary:
+                    typeof saved.turnsStationary === 'number' ? saved.turnsStationary : 0,
+                  isEntrenched: !!saved.isEntrenched,
+                  isConsecratedSource: !!saved.isConsecratedSource,
+                  isReceivingConsecration: !!saved.isReceivingConsecration,
+                  isDominated: !!saved.isDominated,
+                };
+              } else {
+                // No saved state - create default state. We do not auto-grant entrench/consecrate
+                // just because the player unlocked the evolution; those must be earned during play
+                // (turnsStationary based). However, if the player's evolution implies immediate
+                // activation (edge cases), we can seed conservative defaults here in future.
+                pieceStates[square] = {
+                  type: piece.type,
+                  color: piece.color,
+                  turnsStationary: 0,
+                  isEntrenched: false,
+                  isConsecratedSource: false,
+                  isReceivingConsecration: false,
+                  isDominated: false,
+                };
+              }
             }
           }
         }

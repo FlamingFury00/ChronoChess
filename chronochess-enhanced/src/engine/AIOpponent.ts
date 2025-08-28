@@ -103,6 +103,8 @@ export class AIOpponent {
   private readonly AI_CONSECRATED_SOURCE_BONUS = 15;
   private readonly AI_RECEIVING_CONSECRATION_BONUS = 10;
   private readonly AI_KNIGHT_DASH_READY_BONUS = 8;
+  // Penalty applied when a piece is dominated (negative value)
+  private readonly AI_DOMINATED_PENALTY = -35;
 
   private pieceStates: PieceStateTracker = {};
   private nodesEvaluated = 0;
@@ -628,7 +630,21 @@ export class AIOpponent {
               }
             }
 
-            // **Dominated pieces penalty - REAL GAMEPLAY IMPACT**\n            if (pieceState.isDominated) {\n              const basePenalty = this.AI_DOMINATED_PENALTY * 3; // Increased penalty\n              abilityBonuses += basePenalty;\n              \n              // Additional penalty based on piece value\n              const pieceValuePenalty = (this.pieceValues[pieceState.type] || 0) * 0.2;\n              abilityBonuses -= pieceValuePenalty;\n              \n              console.log(`👑 AI: Piece at ${algebraicSquare} is dominated, ${abilityBonuses} evaluation penalty`);\n            }
+            // **Dominated pieces penalty - REAL GAMEPLAY IMPACT**
+            if (pieceState.isDominated) {
+              // basePenalty is negative (penalty). Multiply for stronger effect.
+              const basePenalty = this.AI_DOMINATED_PENALTY * 3;
+              abilityBonuses += basePenalty;
+
+              // Additional penalty scaled by piece intrinsic value
+              const pieceValuePenalty =
+                (this.pieceValues[pieceState.type as keyof typeof this.pieceValues] || 0) * 0.2;
+              abilityBonuses -= pieceValuePenalty;
+
+              console.log(
+                `👑 AI: Piece at ${algebraicSquare} is dominated, ${abilityBonuses} evaluation penalty`
+              );
+            }
 
             // **Knight abilities - ENHANCED EVALUATION**
             if (pieceState.type === 'n') {
