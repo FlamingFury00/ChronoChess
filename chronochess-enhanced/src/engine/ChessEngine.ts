@@ -432,81 +432,41 @@ export class ChessEngine {
       console.log('ℹ️ No global chronoChessStore found, will try engine-side fallbacks');
     }
 
-    // Try to get enhanced moves directly from the store
-    if (gameStore && gameStore.getEnhancedValidMoves) {
-      try {
-        console.log(`🔍 Getting enhanced moves for ${from}`);
-        const enhancedMoves = gameStore.getEnhancedValidMoves(from);
-        console.log(`🔍 Enhanced moves found:`, enhancedMoves);
-
-        const standardMoves = this.chess.moves({ square: from as any, verbose: true });
-        console.log(
-          `🔍 Standard moves:`,
-          standardMoves.map((m: any) => m.to)
-        );
-
-        // Check if this move is enhanced (exists in enhanced moves but not standard)
-        const isStandardMove = standardMoves.some((move: any) => move.to === to);
-        const enhancedMove = enhancedMoves.find((move: any) => move.to === to);
-        const isEnhancedMove = enhancedMove && enhancedMove.enhanced;
-
-        console.log(
-          `🔍 Move analysis: standard=${isStandardMove}, enhanced=${!!isEnhancedMove}, move=`,
-          enhancedMove
-        );
-
-        // If it's a standard move, it's not enhanced
-        if (isStandardMove) {
-          console.log(`✅ Move ${from}->${to} is a standard move`);
-          return false;
-        }
-
-        // If it's in enhanced moves with enhancement flag, it's enhanced
-        if (isEnhancedMove) {
-          console.log(`⚡ Move ${from}->${to} is an ENHANCED move: ${enhancedMove.enhanced}`);
-          return true;
-        }
-
-        console.log(`❌ Move ${from}->${to} not found in enhanced moves`);
-        return false;
-      } catch (error) {
-        console.error('Error getting enhanced moves:', error);
-        return false;
-      }
-    }
-
-    // Fallback to try the other store method (useGameStore) if present
+    // Prefer computing enhanced moves from the engine internals rather than
+    // calling into the external store. This avoids reentrant calls where the
+    // store asks the engine for moves while the engine is already computing
+    // them. Use the authoritative chess instance to get base moves then apply
+    // evolution-based augmentations via applyEvolutionToMoves.
     try {
-      const useGameStore = (globalThis as any).useGameStore;
-      console.log('🔍 UseGameStore available:', !!useGameStore);
+      const rawStandard = this.chess.moves({ square: from as any, verbose: true }) || [];
+      const standardMoves = (rawStandard as any[]).map(m => ({ from: m.from, to: m.to }));
+      const enhancedMoves = this.applyEvolutionToMoves(standardMoves as any, from as any);
 
-      if (useGameStore) {
-        const store = useGameStore.getState();
-        console.log('🔍 Store state:', !!store, store ? Object.keys(store) : 'none');
+      const isStandardMove = standardMoves.some((m: any) => m.to === to);
+      const enhancedMove = (enhancedMoves || []).find((m: any) => m.to === to);
+      const isEnhancedMove = enhancedMove && (enhancedMove as any).enhanced;
 
-        if (store && store.getEnhancedValidMoves) {
-          const enhancedMoves = store.getEnhancedValidMoves(from);
-          console.log(`🔍 Enhanced moves from state:`, enhancedMoves);
-
-          const standardMoves = this.chess.moves({ square: from as any, verbose: true });
-
-          // Check if this move is enhanced (not in standard moves but in enhanced moves)
-          const isStandardMove = standardMoves.some((move: any) => move.to === to);
-          const isInEnhancedMoves = enhancedMoves.some(
-            (move: any) => move.to === to && move.enhanced
-          );
-
-          const result = !isStandardMove && isInEnhancedMoves;
-          console.log(
-            `🔍 Final result (useGameStore): ${result} (standard: ${isStandardMove}, enhanced: ${isInEnhancedMoves})`
-          );
-
-          if (result) return result;
-        }
+      if (isStandardMove) {
+        console.log(`✅ Move ${from}->${to} is a standard move`);
+        return false;
       }
-    } catch (error) {
-      console.error('Error checking enhanced move with fallback store:', error);
+
+      if (isEnhancedMove) {
+        console.log(
+          `⚡ Move ${from}->${to} is an ENHANCED move: ${(enhancedMove as any).enhanced}`
+        );
+        return true;
+      }
+    } catch (err) {
+      console.warn('Error computing enhanced moves internally:', err);
     }
+
+    // NOTE: Intentionally skipping calling into the external store (useGameStore)
+    // as a fallback here because doing so may cause reentrant engine->store->engine
+    // calls in runtime environments where the store queries the engine for moves.
+    // Engine computes enhancements internally (above) and consults its own
+    // pieceEvolutions.modifiedMoves as a final fallback below.
+    console.log('ℹ️ Skipping external store fallback to avoid reentrancy (engine-only check)');
 
     // FINAL FALLBACK: If no global store is available or store methods didn't report this move,
     // consult the engine's own pieceEvolutions.modifiedMoves to determine enhanced moves.
@@ -886,16 +846,17 @@ export class ChessEngine {
             console.log(`✅ Knight dash move validated (dash active: ${isDashActive})`);
             return true;
           }
-          // **SPECIAL: For knight-dash ability, also check if target is in the generated enhanced moves**
-          const enhancedMoves = gameStore.getEnhancedValidMoves
-            ? gameStore.getEnhancedValidMoves(from)
-            : [];
-          const isValidDashTarget = enhancedMoves.some(
-            (move: any) => move.to === to && move.enhanced === 'knight-dash'
-          );
-          if (isValidDashTarget) {
-            console.log(`✅ Knight dash move validated via enhanced moves list`);
-            return true;
+          // **SPECIAL: For knight-dash ability, check engine-generated dash targets
+          // Use the engine's own generator to avoid reentrant calls into the store.
+          try {
+            const engineDashTargets = this.getEnhancedKnightMoves(from);
+            const isValidDashTarget = engineDashTargets.includes(to);
+            if (isValidDashTarget) {
+              console.log(`✅ Knight dash move validated via engine-generated dash targets`);
+              return true;
+            }
+          } catch (err) {
+            console.warn('Failed to validate knight dash via engine generator:', err);
           }
           break;
       }
@@ -2969,10 +2930,8 @@ export class ChessEngine {
       }
     }
 
-    // Fallback: if nothing was added but pieceType is pawn, include generic enhanced pawn moves
-    if (additionalMoves.length === 0 && evolution.pieceType === 'p') {
-      additionalMoves.push(...this.getEnhancedPawnMoves(square));
-    }
+    // Note: Do NOT add generic fallback enhanced pawn moves when no abilities are present.
+    // Enhanced moves should only be generated when explicit abilities or modifiedMoves exist.
 
     return additionalMoves;
   }

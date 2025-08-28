@@ -2527,176 +2527,167 @@ export const useGameStore = create<GameStore>()(
             return;
           }
 
-          // Dynamically extract AIOpponent class source as string
-          // (Assumes AIOpponent is exported as a class in the file)
-          // This is a hack, but works for worker offload
-          fetch(new URL('../engine/AIOpponent.ts', import.meta.url))
-            .then(res => res.text())
-            .then(aiSource => {
-              const classStart = aiSource.indexOf('class AIOpponent');
-              const classEnd = aiSource.lastIndexOf('}');
-              const aiOpponentSource = aiSource.substring(classStart, classEnd + 1);
+          // Create a worker and instruct it to import the AIOpponent module URL
+          const aiModuleUrl = new URL('../engine/AIOpponent.ts', import.meta.url).href;
 
-              const worker = new Worker(new URL('../engine/aiWorker.js', import.meta.url), {
-                type: 'module',
-              });
-              const fen = chessEngine.chess.fen();
-              const depth = 3;
-              const pieceStates = state.manualModePieceStates;
+          const worker = new Worker(new URL('../engine/aiWorker.js', import.meta.url), {
+            type: 'module',
+          });
+          const fen = chessEngine.chess.fen();
+          const depth = 3;
+          const pieceStates = state.manualModePieceStates;
 
-              worker.postMessage({ fen, depth, pieceStates, aiOpponentSource });
+          worker.postMessage({ fen, depth, pieceStates, aiOpponentModuleUrl: aiModuleUrl });
 
-              worker.onmessage = function (e) {
-                const aiResult = e.data;
-                worker.terminate();
-                if (aiResult && aiResult.move) {
-                  // Make the AI move
-                  const result = chessEngine.makeMove(
-                    aiResult.move.from,
-                    aiResult.move.to,
-                    aiResult.move.promotion
-                  );
-                  if (result.success && result.move) {
-                    // Trigger move animation if available
-                    const animateMove = async () => {
-                      if (state.ui.moveAnimationCallback) {
-                        try {
-                          await state.ui.moveAnimationCallback?.(result.move);
-                        } catch (error) {
-                          console.error('AI move animation failed:', error);
-                        }
-                      }
-                    };
-                    animateMove().then(() => {
-                      if (!result.move) return;
-                      // Update game state after animation
-                      const newGameState = chessEngine.getGameState();
-                      set({ game: newGameState });
-                      get().addMoveToHistory(result.move);
-                      get().addToGameLog(`AI: ${result.move.san}`);
-                      const currentStateForSound = get();
-                      if (currentStateForSound.settings.soundEnabled) {
-                        if (result.move.flags?.includes('c')) {
-                          simpleSoundPlayer.playSound('capture');
-                        } else {
-                          simpleSoundPlayer.playSound('move');
-                        }
-                      }
-                      get().updateManualModePieceStatesAfterMove(result.move, 'b');
-                      get().handleManualModeSpecialAbilities(result.move, 'b');
-                      if (newGameState.gameOver) {
-                        let victory = undefined;
-                        if (newGameState.inCheckmate) {
-                          // If checkmate occurred, the side to move (newGameState.turn)
-                          // is the one that was checkmated (i.e. the loser). The player
-                          // is White, so they win when the side to move is Black ('b').
-                          victory = newGameState.turn === 'b';
-                        }
-                        setTimeout(() => get().endManualGame(victory), 1000);
-                      }
-                    });
+          worker.onmessage = function (e) {
+            const aiResult = e.data;
+            worker.terminate();
+            if (aiResult && aiResult.move) {
+              // Make the AI move
+              const result = chessEngine.makeMove(
+                aiResult.move.from,
+                aiResult.move.to,
+                aiResult.move.promotion
+              );
+              if (result.success && result.move) {
+                // Trigger move animation if available
+                const animateMove = async () => {
+                  if (state.ui.moveAnimationCallback) {
+                    try {
+                      await state.ui.moveAnimationCallback?.(result.move);
+                    } catch (error) {
+                      console.error('AI move animation failed:', error);
+                    }
                   }
-                } else {
-                  // Fallback to random move if AI fails
-                  const randomMove =
-                    possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-                  const result = chessEngine.makeMove(
-                    randomMove.from,
-                    randomMove.to,
-                    randomMove.promotion
-                  );
-                  if (result.success && result.move) {
-                    const animateMove = async () => {
-                      if (state.ui.moveAnimationCallback) {
-                        try {
-                          await state.ui.moveAnimationCallback?.(result.move);
-                        } catch (error) {
-                          console.error('AI move animation failed:', error);
-                        }
-                      }
-                    };
-                    animateMove().then(() => {
-                      if (!result.move) return;
-                      const newGameState = chessEngine.getGameState();
-                      set({ game: newGameState });
-                      get().addMoveToHistory(result.move);
-                      get().addToGameLog(`AI: ${result.move.san}`);
-                      const currentStateForSound = get();
-                      if (currentStateForSound.settings.soundEnabled) {
-                        if (result.move.flags?.includes('c')) {
-                          simpleSoundPlayer.playSound('capture');
-                        } else {
-                          simpleSoundPlayer.playSound('move');
-                        }
-                      }
-                      get().updateManualModePieceStatesAfterMove(result.move, 'b');
-                      get().handleManualModeSpecialAbilities(result.move, 'b');
-                      if (newGameState.gameOver) {
-                        let victory = undefined;
-                        if (newGameState.inCheckmate) {
-                          // Player (white) wins when the side to move after the
-                          // move is black ('b'), meaning black has been checkmated.
-                          victory = newGameState.turn === 'b';
-                        }
-                        setTimeout(() => get().endManualGame(victory), 1000);
-                      }
-                    });
+                };
+                animateMove().then(() => {
+                  if (!result.move) return;
+                  // Update game state after animation
+                  const newGameState = chessEngine.getGameState();
+                  set({ game: newGameState });
+                  get().addMoveToHistory(result.move);
+                  get().addToGameLog(`AI: ${result.move.san}`);
+                  const currentStateForSound = get();
+                  if (currentStateForSound.settings.soundEnabled) {
+                    if (result.move.flags?.includes('c')) {
+                      simpleSoundPlayer.playSound('capture');
+                    } else {
+                      simpleSoundPlayer.playSound('move');
+                    }
                   }
-                }
-              };
-              worker.onerror = function (err) {
-                console.error('AI Worker error:', err);
-                // Fallback to synchronous AI if worker fails
-                const aiOpponent = new AIOpponent();
-                const aiResult = aiOpponent.getBestMove(
-                  chessEngine.chess,
-                  3,
-                  state.manualModePieceStates
-                );
-                if (aiResult.move) {
-                  const result = chessEngine.makeMove(
-                    aiResult.move.from,
-                    aiResult.move.to,
-                    aiResult.move.promotion
-                  );
-                  if (result.success && result.move) {
-                    const animateMove = async () => {
-                      if (state.ui.moveAnimationCallback) {
-                        try {
-                          await state.ui.moveAnimationCallback?.(result.move);
-                        } catch (error) {
-                          console.error('AI move animation failed:', error);
-                        }
-                      }
-                    };
-                    animateMove().then(() => {
-                      if (!result.move) return;
-                      const newGameState = chessEngine.getGameState();
-                      set({ game: newGameState });
-                      get().addMoveToHistory(result.move);
-                      get().addToGameLog(`AI: ${result.move.san}`);
-                      const currentStateForSound = get();
-                      if (currentStateForSound.settings.soundEnabled) {
-                        if (result.move.flags?.includes('c')) {
-                          simpleSoundPlayer.playSound('capture');
-                        } else {
-                          simpleSoundPlayer.playSound('move');
-                        }
-                      }
-                      get().updateManualModePieceStatesAfterMove(result.move, 'b');
-                      get().handleManualModeSpecialAbilities(result.move, 'b');
-                      if (newGameState.gameOver) {
-                        let victory = undefined;
-                        if (newGameState.inCheckmate) {
-                          victory = newGameState.turn === 'b';
-                        }
-                        setTimeout(() => get().endManualGame(victory), 1000);
-                      }
-                    });
+                  get().updateManualModePieceStatesAfterMove(result.move, 'b');
+                  get().handleManualModeSpecialAbilities(result.move, 'b');
+                  if (newGameState.gameOver) {
+                    let victory = undefined;
+                    if (newGameState.inCheckmate) {
+                      // If checkmate occurred, the side to move (newGameState.turn)
+                      // is the one that was checkmated (i.e. the loser). The player
+                      // is White, so they win when the side to move is Black ('b').
+                      victory = newGameState.turn === 'b';
+                    }
+                    setTimeout(() => get().endManualGame(victory), 1000);
                   }
-                }
-              };
-            });
+                });
+              }
+            } else {
+              // Fallback to random move if AI fails
+              const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+              const result = chessEngine.makeMove(
+                randomMove.from,
+                randomMove.to,
+                randomMove.promotion
+              );
+              if (result.success && result.move) {
+                const animateMove = async () => {
+                  if (state.ui.moveAnimationCallback) {
+                    try {
+                      await state.ui.moveAnimationCallback?.(result.move);
+                    } catch (error) {
+                      console.error('AI move animation failed:', error);
+                    }
+                  }
+                };
+                animateMove().then(() => {
+                  if (!result.move) return;
+                  const newGameState = chessEngine.getGameState();
+                  set({ game: newGameState });
+                  get().addMoveToHistory(result.move);
+                  get().addToGameLog(`AI: ${result.move.san}`);
+                  const currentStateForSound = get();
+                  if (currentStateForSound.settings.soundEnabled) {
+                    if (result.move.flags?.includes('c')) {
+                      simpleSoundPlayer.playSound('capture');
+                    } else {
+                      simpleSoundPlayer.playSound('move');
+                    }
+                  }
+                  get().updateManualModePieceStatesAfterMove(result.move, 'b');
+                  get().handleManualModeSpecialAbilities(result.move, 'b');
+                  if (newGameState.gameOver) {
+                    let victory = undefined;
+                    if (newGameState.inCheckmate) {
+                      // Player (white) wins when the side to move after the
+                      // move is black ('b'), meaning black has been checkmated.
+                      victory = newGameState.turn === 'b';
+                    }
+                    setTimeout(() => get().endManualGame(victory), 1000);
+                  }
+                });
+              }
+            }
+          };
+          worker.onerror = function (err) {
+            console.error('AI Worker error:', err);
+            // Fallback to synchronous AI if worker fails
+            const aiOpponent = new AIOpponent();
+            const aiResult = aiOpponent.getBestMove(
+              chessEngine.chess,
+              3,
+              state.manualModePieceStates
+            );
+            if (aiResult.move) {
+              const result = chessEngine.makeMove(
+                aiResult.move.from,
+                aiResult.move.to,
+                aiResult.move.promotion
+              );
+              if (result.success && result.move) {
+                const animateMove = async () => {
+                  if (state.ui.moveAnimationCallback) {
+                    try {
+                      await state.ui.moveAnimationCallback?.(result.move);
+                    } catch (error) {
+                      console.error('AI move animation failed:', error);
+                    }
+                  }
+                };
+                animateMove().then(() => {
+                  if (!result.move) return;
+                  const newGameState = chessEngine.getGameState();
+                  set({ game: newGameState });
+                  get().addMoveToHistory(result.move);
+                  get().addToGameLog(`AI: ${result.move.san}`);
+                  const currentStateForSound = get();
+                  if (currentStateForSound.settings.soundEnabled) {
+                    if (result.move.flags?.includes('c')) {
+                      simpleSoundPlayer.playSound('capture');
+                    } else {
+                      simpleSoundPlayer.playSound('move');
+                    }
+                  }
+                  get().updateManualModePieceStatesAfterMove(result.move, 'b');
+                  get().handleManualModeSpecialAbilities(result.move, 'b');
+                  if (newGameState.gameOver) {
+                    let victory = undefined;
+                    if (newGameState.inCheckmate) {
+                      victory = newGameState.turn === 'b';
+                    }
+                    setTimeout(() => get().endManualGame(victory), 1000);
+                  }
+                });
+              }
+            }
+          };
         } catch (error) {
           console.error('AI move failed:', error);
         }
@@ -3454,11 +3445,10 @@ export const useGameStore = create<GameStore>()(
         // recursive generation and mismatch.
         if (_inEnhancedMoveGen) {
           console.log(
-            '⛔ Reentrant enhanced move generation detected, returning minimal canonical + dash moves'
+            '⛔ Reentrant enhanced move generation detected — computing engine-side enhanced moves to avoid losing destinations'
           );
-          // Return canonical chess.js moves plus knight-dash targets (if engine
-          // evolution declares them) so engine-side validation can find
-          // dash targets without causing recursion.
+
+          // Compute base canonical moves from the engine
           const chess = chessEngine.chess;
           const standardRaw = chess.moves({ square: square as any, verbose: true }) || [];
           const canonical: Move[] = (standardRaw as any[]).map(m => ({
@@ -3469,42 +3459,109 @@ export const useGameStore = create<GameStore>()(
             flags: (m as any).flags as any,
           }));
 
-          // If caller supplied a square and the engine evolution lists knight-dash,
-          // include those targets as properly-typed Move entries.
-          if (square) {
-            const evo = chessEngine.getPieceEvolution(square as any);
-            if (
-              evo &&
-              evo.abilities &&
-              evo.abilities.some((a: any) => {
-                const id = String(a.id || '').toLowerCase();
-                return id === 'knight-dash' || id === 'dash';
-              })
-            ) {
-              const dashTargets = get().generateKnightDashMoves(square);
-              const dashMoves: Move[] = dashTargets.map(
-                (t: string) =>
+          // Use the engine's internal evolution applicator to get enhanced moves
+          // without invoking store-level filtering (which could recurse).
+          try {
+            // applyEvolutionToMoves is private; call via any to access internals safely in runtime
+            const engineEnhanced = (chessEngine as any).applyEvolutionToMoves(canonical, square);
+            if (Array.isArray(engineEnhanced) && engineEnhanced.length > 0) {
+              // Normalize output shape to Move[] and ensure enhanced flag preserved
+              const normalized = engineEnhanced.map(
+                (m: any) =>
                   ({
-                    from: square as string,
-                    to: t,
-                    promotion: undefined,
-                    san: `N${t}`,
-                    flags: '',
-                    enhanced: 'knight-dash',
+                    from: m.from,
+                    to: m.to,
+                    promotion: m.promotion,
+                    san: m.san,
+                    flags: m.flags,
+                    enhanced: m.enhanced,
                   }) as Move
               );
-              canonical.push(...dashMoves);
+
+              // Filter engine-provided enhanced moves by player's active evolutions
+              try {
+                const storeState = get();
+                const storeEvos = storeState.pieceEvolutions as any;
+
+                const filteredNormalized = normalized.filter((m: any) => {
+                  // Keep canonical (non-enhanced) moves
+                  if (!m.enhanced) return true;
+
+                  const abilityId = String(m.enhanced || '').toLowerCase();
+
+                  switch (abilityId) {
+                    case 'knight-dash':
+                    case 'dash':
+                      return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
+                    case 'enhanced-march':
+                      return !!(storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1);
+                    case 'breakthrough':
+                    case 'diagonal-move':
+                      return !!(storeEvos.pawn && (storeEvos.pawn.resilience || 0) > 0);
+                    case 'bishop-consecrate':
+                    case 'consecration':
+                      return !!(storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3);
+                    case 'rook-entrench':
+                    case 'entrenchment':
+                      return !!(storeEvos.rook && (storeEvos.rook.entrenchThreshold || 3) < 3);
+                    case 'queen-dominance':
+                    case 'dominance':
+                      return !!(storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1);
+                    case 'extended-range':
+                      // extended-range may depend on piece type; allow by default
+                      return true;
+                    default:
+                      // Unknown abilities: be permissive (avoid hiding third-party abilities)
+                      return true;
+                  }
+                });
+
+                // Ensure canonical moves are present
+                const dests = new Set(filteredNormalized.map((m: any) => m.to));
+                for (const c of canonical) {
+                  if (!dests.has(c.to)) filteredNormalized.push(c);
+                }
+
+                return filteredNormalized;
+              } catch (err) {
+                console.warn(
+                  'Failed to filter engine-side enhanced moves against store evolutions:',
+                  err
+                );
+                // Fallback: ensure canonical moves present and return normalized
+                const dests = new Set(normalized.map((m: any) => m.to));
+                for (const c of canonical) {
+                  if (!dests.has(c.to)) normalized.push(c);
+                }
+                return normalized;
+              }
             }
+          } catch (err) {
+            console.warn(
+              'Failed to compute engine-side enhanced moves during reentrant call:',
+              err
+            );
           }
 
+          // Fallback: return canonical moves if engine-side augmentation failed
           return canonical;
         }
         _inEnhancedMoveGen = true;
 
         console.log(`🎯 Getting enhanced moves for square: ${square}`);
 
-        // Get base moves from chess engine (which now includes evolution effects)
-        const moves = chessEngine.getValidMoves(square as any);
+        // Get base moves from the authoritative chess instance directly to avoid
+        // recursing back through the engine wrapper (which would call this
+        // function again). Using `chessEngine.chess.moves` prevents engine->store->engine recursion.
+        const chess = chessEngine.chess;
+        const rawBase = chess.moves({ square: square as any, verbose: true }) || [];
+        const moves: Move[] = (rawBase as any[]).map(m => ({
+          from: m.from as string,
+          to: m.to as string,
+          promotion: m.promotion as any,
+          san: m.san,
+          flags: m.flags,
+        }));
         console.log(
           `🔍 Base moves from chess engine:`,
           moves.map(m => m.to)
@@ -3520,7 +3577,6 @@ export const useGameStore = create<GameStore>()(
         // a new Chess from the store FEN which can be out-of-sync. This
         // prevents inconsistencies where UI-generated moves disagree with
         // the engine's legal moves.
-        const chess = chessEngine.chess;
         const piece = chess.get(square as any);
         if (!piece || piece.color !== 'w') {
           console.log(`🔍 No white piece at ${square}, returning base moves`);
