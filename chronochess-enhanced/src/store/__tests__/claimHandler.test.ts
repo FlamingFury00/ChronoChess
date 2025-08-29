@@ -11,7 +11,7 @@ vi.mock('../../store/gameStore', async () => {
 vi.mock('../../save/ProgressTracker', () => ({
   progressTracker: {
     markAchievementClaimed: vi.fn().mockResolvedValue(true),
-    setOnAchievementUnlocked: vi.fn(),
+    addAchievementUnlockedListener: vi.fn().mockImplementation((cb: any) => () => {}),
   },
 }));
 

@@ -767,6 +767,26 @@ export class PieceEvolutionSystem {
 
       this.combinations.set(hash, combination);
       this.totalCombinationsTracked = this.totalCombinationsTracked + BigInt(1);
+      // Notify ProgressTracker about new discovered combination so achievements
+      // like powerful_combination and combination_collector are considered.
+      try {
+        // Import lazily to avoid circular dependency at module load time
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { progressTracker } = require('../save/ProgressTracker');
+        if (progressTracker && typeof progressTracker.trackEvolutionCombination === 'function') {
+          try {
+            progressTracker
+              .trackEvolutionCombination(new Map([[evolution.pieceType, evolution]]))
+              .catch((err: any) =>
+                console.warn('Failed to notify ProgressTracker of combination discovery:', err)
+              );
+          } catch (err) {
+            console.warn('Failed to call trackEvolutionCombination:', err);
+          }
+        }
+      } catch (err) {
+        // Ignore - progress tracker may not be available in some contexts (tests)
+      }
     }
   }
 

@@ -57,6 +57,12 @@ const Navigation: React.FC<NavigationProps> = ({
       badge: Math.floor(resources.temporalEssence) > 10 ? '!' : undefined,
     },
     {
+      id: 'achievements',
+      label: 'Achievements',
+      icon: '🏆',
+      description: 'Track your progress',
+    },
+    {
       id: 'settings',
       label: 'Settings',
       icon: '⚙️',
@@ -69,6 +75,7 @@ const Navigation: React.FC<NavigationProps> = ({
     menu: [],
     soloMode: ['menu'],
     evolution: ['menu'],
+    achievements: ['menu'],
     settings: ['menu'],
   };
 

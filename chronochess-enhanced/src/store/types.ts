@@ -12,7 +12,7 @@ export interface AppState {
 
 export interface UIState {
   selectedSquare: string | null;
-  currentScene: 'menu' | 'soloMode' | 'evolution' | 'settings';
+  currentScene: 'menu' | 'soloMode' | 'evolution' | 'settings' | 'achievements';
   isLoading: boolean;
   showEvolutionPanel?: boolean;
   showResourcePanel?: boolean;

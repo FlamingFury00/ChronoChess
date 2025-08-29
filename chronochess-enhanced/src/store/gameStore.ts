@@ -36,6 +36,19 @@ import {
 
 // Campaign system removed - using simple Solo Mode instead
 
+// Helper function to convert piece type names to codes
+const pieceTypeToCode = (pieceType: keyof PieceEvolutionData): PieceType => {
+  const mapping: Record<keyof PieceEvolutionData, PieceType> = {
+    pawn: 'p',
+    knight: 'n',
+    bishop: 'b',
+    rook: 'r',
+    queen: 'q',
+    king: 'k',
+  };
+  return mapping[pieceType];
+};
+
 // Save data structure for serialization
 export interface SaveData {
   version: string;
@@ -294,8 +307,13 @@ import { showAchievement } from '../components/common/achievementModalService';
 import { setAchievementClaimHandler } from '../components/common/achievementClaimService';
 import { audioFeedbackSystem } from '../audio';
 try {
+  // Initialize progress tracker
+  progressTracker
+    .initialize()
+    .catch(err => console.warn('Failed to initialize progress tracker:', err));
+
   // If an achievement is unlocked via the progress tracker, award its aetherShards
-  progressTracker.setOnAchievementUnlocked((achievement: any) => {
+  progressTracker.addAchievementUnlockedListener((achievement: any) => {
     try {
       if (achievement && (achievement as any).reward && (achievement as any).reward.aetherShards) {
         const shards = (achievement as any).reward.aetherShards;
@@ -787,6 +805,25 @@ export const useGameStore = create<GameStore>()(
             manualModePieceStates: saveData.manualModePieceStates || {},
           });
 
+          // Reconcile resource-based achievements with ProgressTracker after loading
+          try {
+            // Lazy require to avoid circular dependency during module evaluation
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { progressTracker } = require('../save/ProgressTracker');
+            if (
+              progressTracker &&
+              typeof progressTracker.reconcileAchievementsWithStats === 'function'
+            ) {
+              progressTracker
+                .reconcileAchievementsWithStats(finalResources)
+                .catch((err: any) =>
+                  console.warn('Failed to reconcile achievements after load:', err)
+                );
+            }
+          } catch (err) {
+            // ignore in environments without progress tracker
+          }
+
           // After restoring pieceEvolutions from save, ensure the chess engine syncs
           try {
             console.log('🔄 Syncing chess engine per-piece evolutions after load/deserialize');
@@ -986,6 +1023,19 @@ export const useGameStore = create<GameStore>()(
         // Sync with ResourceManager
         const currentState = get();
         resourceManager.setResourceState(currentState.resources);
+        // Ensure resource achievements are evaluated on any resource update
+        try {
+          progressTracker
+            .trackResourceAccumulation({
+              temporalEssence: currentState.resources.temporalEssence,
+              mnemonicDust: currentState.resources.mnemonicDust,
+              arcaneMana: currentState.resources.arcaneMana,
+              aetherShards: currentState.resources.aetherShards,
+            })
+            .catch(err => console.warn('Failed to track resource achievements:', err));
+        } catch (err) {
+          console.warn('Progress tracker not available for resource tracking:', err);
+        }
       },
 
       canAffordCost: cost => {
@@ -995,14 +1045,29 @@ export const useGameStore = create<GameStore>()(
       spendResources: cost => {
         const success = resourceManager.spendResources(cost);
         if (success) {
-          set({ resources: resourceManager.getResourceState() });
+          // Use centralized updateResources so achievement tracking and ResourceManager sync happen
+          get().updateResources(resourceManager.getResourceState());
         }
         return success;
       },
 
       awardResources: gains => {
         resourceManager.awardResources(gains);
-        set({ resources: resourceManager.getResourceState() });
+        const newResources = resourceManager.getResourceState();
+        // Use centralized updateResources so achievements are checked
+        get().updateResources(newResources);
+
+        // Track resource accumulation achievements
+        try {
+          progressTracker
+            .trackResourceAccumulation({
+              temporalEssence: newResources.temporalEssence,
+              mnemonicDust: newResources.mnemonicDust,
+            })
+            .catch(err => console.warn('Failed to track resource achievements:', err));
+        } catch (err) {
+          console.warn('Progress tracker not available for resource tracking:', err);
+        }
       },
 
       startResourceGeneration: () => {
@@ -1036,7 +1101,8 @@ export const useGameStore = create<GameStore>()(
         // Start real-time UI updates
         const updateInterval = setInterval(() => {
           const currentResources = resourceManager.getResourceState();
-          set({ resources: currentResources });
+          // Route through updateResources to ensure achievement checks and sync
+          get().updateResources(currentResources);
         }, 300); // Update UI every 300ms to reduce update flood while keeping smooth display
 
         // Store interval reference for cleanup
@@ -1117,7 +1183,8 @@ export const useGameStore = create<GameStore>()(
             };
 
             get().addEvolution(`${pieceType}-${evolutionId}`, pieceEvolution);
-            set({ resources: resourceManager.getResourceState() });
+            // Route resource update through centralized updater so achievements fire
+            get().updateResources(resourceManager.getResourceState());
             return true;
           }
           return false;
@@ -1462,6 +1529,36 @@ export const useGameStore = create<GameStore>()(
           autoBattleSystem: null,
           gameLog: [...state.gameLog, outcomeMessage, 'The timeline stabilizes... for now.'],
         });
+
+        // Track achievements for game completion
+        if (victory) {
+          const newWinStreak = state.soloModeStats.encountersWon + 1;
+          const totalWins = state.soloModeStats.encountersWon + 1;
+
+          // Track game win achievements
+          try {
+            progressTracker
+              .trackGameWin({
+                winStreak: newWinStreak,
+                totalWins: totalWins,
+                gameDuration: undefined, // Could be tracked if we had timing
+                piecesLost: undefined, // Could be tracked if we had piece loss counting
+                materialDown: undefined, // Could be tracked if we had material advantage tracking
+              })
+              .catch(err => console.warn('Failed to track game win achievements:', err));
+          } catch (err) {
+            console.warn('Progress tracker not available for achievement tracking:', err);
+          }
+        }
+
+        // Track resource tycoon achievement
+        try {
+          progressTracker
+            .trackResourceTycoon(state.resources.temporalEssence)
+            .catch(err => console.warn('Failed to track resource tycoon achievement:', err));
+        } catch (err) {
+          console.warn('Progress tracker not available for resource tycoon tracking:', err);
+        }
 
         // If a save was requested during the encounter, perform it now
         setTimeout(() => {
@@ -1905,6 +2002,41 @@ export const useGameStore = create<GameStore>()(
                 element.classList.add('highlight-resource');
                 setTimeout(() => element.classList.remove('highlight-resource'), 300);
               }
+            }
+
+            // Track evolution achievements
+            try {
+              const isFirstEvolution =
+                !state.pieceEvolutions[pieceType as keyof PieceEvolutionData] ||
+                Object.values(state.pieceEvolutions[pieceType as keyof PieceEvolutionData]).every(
+                  v => v === 0 || v === 1
+                );
+
+              // Check if this evolution maxed out the attribute
+              const maxValues: Record<string, any> = {
+                'pawn-marchSpeed': 10,
+                'pawn-resilience': 5,
+                'knight-dashChance': 0.8,
+                'knight-dashCooldown': 1,
+                'bishop-snipeRange': 5,
+                'bishop-consecrationTurns': 1,
+                'rook-entrenchThreshold': 1,
+                'rook-entrenchPower': 5,
+                'queen-dominanceAuraRange': 3,
+                'queen-manaRegenBonus': 2.0,
+                'king-royalDecreeUses': 3,
+                'king-lastStandThreshold': 0.5,
+              };
+
+              const maxKey = `${pieceType}-${attribute}`;
+              const isMaxed =
+                maxValues[maxKey] !== undefined && piece[maxKey.split('-')[1]] >= maxValues[maxKey];
+
+              progressTracker
+                .trackPieceEvolution(pieceTypeToCode(pieceType), isMaxed, isFirstEvolution)
+                .catch(err => console.warn('Failed to track evolution achievements:', err));
+            } catch (err) {
+              console.warn('Progress tracker not available for evolution tracking:', err);
             }
 
             return true;
@@ -2593,6 +2725,28 @@ export const useGameStore = create<GameStore>()(
               if (newGameState.inCheckmate) {
                 victory = newGameState.turn === 'b'; // Player wins if it's black's turn and checkmate
               }
+
+              // Track strategic achievements for pawn endgame
+              if (victory) {
+                const remainingPieces = Object.values(state.manualModePieceStates).filter(
+                  (pieceState: any) => pieceState.color === 'w'
+                );
+                const hasOnlyPawnAndKing =
+                  remainingPieces.length === 2 &&
+                  remainingPieces.some((p: any) => p.type === 'p') &&
+                  remainingPieces.some((p: any) => p.type === 'k');
+
+                if (hasOnlyPawnAndKing) {
+                  try {
+                    progressTracker
+                      .trackStrategicAchievement('pawn_endgame')
+                      .catch(err => console.warn('Failed to track strategic achievement:', err));
+                  } catch (err) {
+                    console.warn('Progress tracker not available for strategic tracking:', err);
+                  }
+                }
+              }
+
               setTimeout(() => get().endManualGame(victory), 1000);
             } else {
               // Clear any remaining highlights before AI move
@@ -5035,8 +5189,8 @@ export const useGameStore = create<GameStore>()(
           resourceChanges[resource] = currentAmount - (cost as number);
         });
 
-        // Apply resource cost
-        set({ resources: { ...state.resources, ...resourceChanges } });
+        // Apply resource cost through centralized updater so achievements run
+        get().updateResources({ ...state.resources, ...resourceChanges });
 
         // Unlock the evolution in store and also in the centralized EvolutionTreeSystem
         const newUnlockedEvolutions = new Set(state.unlockedEvolutions);

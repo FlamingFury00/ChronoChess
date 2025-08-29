@@ -39,7 +39,7 @@ describe('ProgressTracker callbacks', () => {
     await progressTracker.initialize();
 
     const cb = vi.fn();
-    progressTracker.setOnAchievementUnlocked(cb);
+    const unsub = progressTracker.addAchievementUnlockedListener(cb);
 
     const unlocked = await progressTracker.unlockAchievement('powerful_combination');
     expect(unlocked).toBe(true);
@@ -50,5 +50,6 @@ describe('ProgressTracker callbacks', () => {
     expect(cb).toHaveBeenCalled();
     const arg = cb.mock.calls[0][0];
     expect(arg.id).toBe('powerful_combination');
+    unsub();
   });
 });

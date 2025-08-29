@@ -1,11 +1,12 @@
 import { useGameStore } from './gameStore';
 import { simpleSoundPlayer } from '../audio/SimpleSoundPlayer';
+import { progressTracker } from '../save/ProgressTracker';
 
 /**
  * Initialize all game systems and load saved data
  * This function is called once when the app starts
  */
-export function initializeGameStore(): void {
+export async function initializeGameStore(): Promise<void> {
   console.log('🚀 Initializing ChronoChess...');
 
   const store = useGameStore.getState();
@@ -15,7 +16,18 @@ export function initializeGameStore(): void {
     console.log('🔊 Initializing audio system...');
     simpleSoundPlayer.initialize();
 
-    // 2. Load saved game data (this will handle offline progress automatically)
+    // 2. Initialize progress tracker
+    console.log('📊 Initializing progress tracker...');
+    await progressTracker.initialize();
+
+    // Reconcile resource-based achievements using a snapshot of current resources
+    try {
+      await progressTracker.reconcileAchievementsWithStats(store.resources);
+    } catch (err) {
+      console.warn('Failed to reconcile achievements with resources snapshot:', err);
+    }
+
+    // 3. Load saved game data (this will handle offline progress automatically)
     console.log('💾 Loading saved game data...');
     const loadSuccess = store.loadFromStorage();
     if (loadSuccess) {
@@ -125,7 +137,7 @@ export function cleanupGameStore(): void {
 /**
  * Reset all game data to initial state
  */
-export function resetGameStore(): void {
+export async function resetGameStore(): Promise<void> {
   console.log('🔄 Resetting game store...');
 
   const store = useGameStore.getState();
@@ -138,7 +150,7 @@ export function resetGameStore(): void {
     localStorage.removeItem('chronochess_save');
 
     // Reinitialize
-    initializeGameStore();
+    await initializeGameStore();
 
     console.log('✅ Game store reset complete');
   } catch (error) {

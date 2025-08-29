@@ -1,7 +1,13 @@
 import { useEffect } from 'react';
 import { useGameStore, initializeGameStore } from './store';
 import { Navigation } from './components/Navigation';
-import { MenuScene, SoloModeScene, EvolutionScene, SettingsScene } from './scenes';
+import {
+  MenuScene,
+  SoloModeScene,
+  EvolutionScene,
+  SettingsScene,
+  AchievementsScene,
+} from './scenes';
 import type { SceneType } from './scenes';
 import './App.css';
 import './index.css';
@@ -11,15 +17,19 @@ function App() {
 
   // Initialize the game store and systems on app start
   useEffect(() => {
-    console.log('🚀 Initializing ChronoChess...');
+    const initializeApp = async () => {
+      console.log('🚀 Initializing ChronoChess...');
 
-    // Initialize game systems
-    initializeGameStore();
+      // Initialize game systems
+      await initializeGameStore();
 
-    // Ensure resource generation is running
-    startResourceGeneration();
+      // Ensure resource generation is running
+      startResourceGeneration();
 
-    console.log('✅ ChronoChess fully initialized!');
+      console.log('✅ ChronoChess fully initialized!');
+    };
+
+    initializeApp();
 
     // Cleanup on unmount
     return () => {
@@ -78,6 +88,8 @@ function App() {
         return <EvolutionScene onSceneChange={handleSceneChange} />;
       case 'settings':
         return <SettingsScene onSceneChange={handleSceneChange} />;
+      case 'achievements':
+        return <AchievementsScene onSceneChange={handleSceneChange} />;
       default:
         return <MenuScene onSceneChange={handleSceneChange} />;
     }

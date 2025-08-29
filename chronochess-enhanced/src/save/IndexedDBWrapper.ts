@@ -15,12 +15,22 @@ export class IndexedDBWrapper {
 
   constructor(
     dbName: string = 'ChronoChessSaves',
-    dbVersion: number = 1,
+    dbVersion: number = 2, // Incremented to force database upgrade
     allowInMemoryFallback: boolean = false
   ) {
     this.dbName = dbName;
     this.dbVersion = dbVersion;
-    this.stores = ['saves', 'metadata', 'backups', 'settings'];
+    this.stores = [
+      'saves',
+      'metadata',
+      'backups',
+      'settings',
+      'combinations',
+      'statistics',
+      'achievements',
+      'analytics_events',
+      'analytics_sessions',
+    ];
     this.allowInMemoryFallback = allowInMemoryFallback;
   }
 
@@ -67,10 +77,12 @@ export class IndexedDBWrapper {
       const request = idb.open(this.dbName, this.dbVersion);
 
       request.onerror = () => {
+        console.error(`❌ Failed to open database: ${request.error?.message}`);
         reject(new Error(`Failed to open database: ${request.error?.message}`));
       };
 
       request.onsuccess = () => {
+        console.log(`✅ Database opened successfully: ${this.dbName} v${this.dbVersion}`);
         this.db = request.result;
 
         // Handle database errors after opening
@@ -84,14 +96,16 @@ export class IndexedDBWrapper {
       };
 
       request.onupgradeneeded = (event: any) => {
+        console.log(`🔄 IndexedDB upgrade needed: from ${event.oldVersion} to ${event.newVersion}`);
         const db = (event.target as IDBOpenDBRequest).result;
 
         // Create object stores if they don't exist
         this.stores.forEach(storeName => {
           if (!db.objectStoreNames.contains(storeName)) {
+            console.log(`📦 Creating object store: ${storeName}`);
             const store = db.createObjectStore(storeName, { keyPath: 'id' });
 
-            // Create indexes for efficient querying
+            // Create indexes for efficient querying based on store type
             if (storeName === 'saves' || storeName === 'backups') {
               store.createIndex('timestamp', 'timestamp', { unique: false });
               store.createIndex('version', 'version', { unique: false });
@@ -102,6 +116,29 @@ export class IndexedDBWrapper {
               store.createIndex('isAutoSave', 'isAutoSave', { unique: false });
               store.createIndex('isCorrupted', 'isCorrupted', { unique: false });
             }
+
+            if (storeName === 'combinations') {
+              store.createIndex('discoveredAt', 'discoveredAt', { unique: false });
+              store.createIndex('totalPower', 'totalPower', { unique: false });
+            }
+
+            if (storeName === 'achievements') {
+              store.createIndex('unlockedTimestamp', 'unlockedTimestamp', { unique: false });
+              store.createIndex('category', 'category', { unique: false });
+              store.createIndex('rarity', 'rarity', { unique: false });
+            }
+
+            if (storeName === 'analytics_events') {
+              store.createIndex('timestamp', 'timestamp', { unique: false });
+              store.createIndex('eventType', 'eventType', { unique: false });
+            }
+
+            if (storeName === 'analytics_sessions') {
+              store.createIndex('startTime', 'startTime', { unique: false });
+              store.createIndex('endTime', 'endTime', { unique: false });
+            }
+          } else {
+            console.log(`✅ Object store already exists: ${storeName}`);
           }
         });
       };
@@ -137,11 +174,25 @@ export class IndexedDBWrapper {
         reject(new Error(`Failed to save to ${storeName}: ${request.error?.message}`));
       };
 
-      request.onsuccess = () => {
+      // Resolve only when the transaction has completed to ensure data is
+      // durably committed. Relying on request.onsuccess alone may return
+      // before the transaction is fully applied in some browsers.
+      const cleanup = () => {
+        transaction.onerror = transaction.oncomplete = transaction.onabort = null;
+      };
+
+      transaction.oncomplete = () => {
+        cleanup();
         resolve();
       };
 
+      transaction.onabort = () => {
+        cleanup();
+        reject(new Error(`Transaction aborted while saving to ${storeName}`));
+      };
+
       transaction.onerror = () => {
+        cleanup();
         reject(new Error(`Transaction failed: ${transaction.error?.message}`));
       };
     });

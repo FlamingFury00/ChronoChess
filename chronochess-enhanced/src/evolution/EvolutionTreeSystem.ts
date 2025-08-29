@@ -5,6 +5,7 @@
 
 import type { PieceType, PieceAbility } from '../engine/types';
 import { showToast } from '../components/common/toastService';
+import { progressTracker } from '../save/ProgressTracker';
 import type { ResourceCost } from '../resources/types';
 
 export interface EvolutionTreeNode {
@@ -877,6 +878,63 @@ export class EvolutionTreeSystem {
     try {
       this.saveUnlocksToStorage();
       console.log(`Evolution ${evolutionId} unlocked and saved to localStorage`);
+      // Notify progress tracker so evolution-based achievements are reconciled
+      try {
+        const node = this.findEvolutionById(evolutionId);
+        if (node) {
+          // Attempt to compute accurate `isMaxed` and `isFirstEvolution` flags by
+          // inspecting the game's piece evolution state. Use lazy requires to avoid
+          // circular imports during module initialization.
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { useGameStore } = require('../store/gameStore');
+            const storeState = useGameStore.getState();
+
+            const pieceEvos = storeState.pieceEvolutions || {};
+            const pieceType = node.pieceType as string;
+
+            // isFirstEvolution: true if no non-default evolutions recorded for piece
+            const pieceData = pieceEvos[pieceType as keyof typeof pieceEvos] as any;
+            const isFirstEvolution =
+              !pieceData ||
+              Object.values(pieceData).every((v: any) => v === 0 || v === null || v === undefined);
+
+            // isMaxed: check if any attribute for this piece type equals the configured max
+            const maxValues: Record<string, any> = {
+              pawn: { marchSpeed: 10, resilience: 5 },
+              knight: { dashChance: 0.8, dashCooldown: 1 },
+              bishop: { snipeRange: 5, consecrationTurns: 1 },
+              rook: { entrenchThreshold: 1, entrenchPower: 5 },
+              queen: { dominanceAuraRange: 3, manaRegenBonus: 2.0 },
+              king: { royalDecreeUses: 3, lastStandThreshold: 0.5 },
+            };
+
+            let isMaxed = false;
+            const checks = maxValues[pieceType as keyof typeof maxValues];
+            if (checks && pieceData) {
+              for (const [attr, maxVal] of Object.entries(checks)) {
+                if (typeof pieceData[attr] === 'number' && pieceData[attr] >= (maxVal as number)) {
+                  isMaxed = true;
+                  break;
+                }
+              }
+            }
+
+            progressTracker
+              .trackPieceEvolution(node.pieceType, isMaxed, isFirstEvolution)
+              .catch((err: any) =>
+                console.warn('Failed to notify ProgressTracker of evolution unlock:', err)
+              );
+          } catch (err) {
+            // Fallback: if store isn't available, mark as first evolution only
+            try {
+              progressTracker.trackPieceEvolution(node.pieceType, false, true).catch(() => {});
+            } catch (err2) {}
+          }
+        }
+      } catch (err) {
+        console.warn('Error while notifying progress tracker about evolution unlock:', err);
+      }
     } catch (error) {
       console.error(`Failed to save evolution ${evolutionId} to localStorage:`, error);
       // Even if saving fails, we still consider the evolution unlocked in memory

@@ -106,6 +106,20 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
           </Button>
 
           <Button
+            onClick={() => onSceneChange('achievements')}
+            className="menu-scene__nav-button"
+            size="large"
+          >
+            <div className="menu-scene__nav-button-content">
+              <span className="menu-scene__nav-button-icon">🏆</span>
+              <div className="menu-scene__nav-button-text">
+                <span className="menu-scene__nav-button-title">Achievements</span>
+                <span className="menu-scene__nav-button-desc">Track your progress and unlocks</span>
+              </div>
+            </div>
+          </Button>
+
+          <Button
             onClick={() => onSceneChange('settings')}
             className="menu-scene__nav-button"
             size="large"

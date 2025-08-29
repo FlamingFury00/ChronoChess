@@ -22,6 +22,7 @@ export class ResourceManager {
   private resources: ResourceState;
   private generationInterval: NodeJS.Timeout | null = null;
   private lastUpdateTime: number;
+  private playTimeAccumulatorMs: number = 0;
   private config: ResourceConfig;
   private premiumCurrencySystem: PremiumCurrencySystem;
 
@@ -113,6 +114,39 @@ export class ResourceManager {
     console.log(
       `📊 Resources: TE:${this.resources.temporalEssence.toFixed(1)} MD:${this.resources.mnemonicDust.toFixed(1)} AM:${this.resources.arcaneMana.toFixed(1)} AS:${this.resources.aetherShards}`
     );
+
+    // Accumulate play time and periodically report to ProgressTracker to unlock time-based achievements
+    try {
+      this.playTimeAccumulatorMs += deltaTime * 1000; // deltaTime is in seconds
+      // Report every 60 seconds to avoid DB thrashing
+      if (this.playTimeAccumulatorMs >= 60 * 1000) {
+        const toAdd = Math.floor(this.playTimeAccumulatorMs);
+        this.playTimeAccumulatorMs = 0;
+        try {
+          // Lazy require to avoid circular imports
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { progressTracker } = require('../save/ProgressTracker');
+          if (progressTracker && typeof progressTracker.updateStatistic === 'function') {
+            // Update statistic (add) and then trigger play time achievement check
+            progressTracker
+              .updateStatistic('totalPlayTime', toAdd, 'add')
+              .then(async () => {
+                try {
+                  const stats = await progressTracker.getPlayerStatistics();
+                  if (stats && typeof stats.totalPlayTime === 'number') {
+                    progressTracker.trackPlayTime(stats.totalPlayTime).catch(() => {});
+                  }
+                } catch (err) {}
+              })
+              .catch((err: any) => console.warn('Failed to update totalPlayTime stat:', err));
+          }
+        } catch (err) {
+          // Ignore - progress tracker may not be present in tests or headless env
+        }
+      }
+    } catch (err) {
+      // swallow any unexpected errors to avoid breaking generation loop
+    }
   }
 
   calculateOfflineProgress(timeAway: number): OfflineProgressResult {
@@ -267,6 +301,23 @@ export class ResourceManager {
 
     // Award the Aether Shards
     this.resources.aetherShards += reward.aetherShards;
+
+    // Notify progress tracker about elegant victory for achievements
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { progressTracker } = require('../save/ProgressTracker');
+      if (progressTracker && typeof progressTracker.trackElegantMove === 'function') {
+        try {
+          progressTracker
+            .trackElegantMove()
+            .catch((err: any) =>
+              console.warn('Failed to notify ProgressTracker of elegant move:', err)
+            );
+        } catch (err) {}
+      }
+    } catch (err) {
+      // ignore in environments without ProgressTracker
+    }
 
     return reward;
   }
