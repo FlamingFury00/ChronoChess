@@ -253,7 +253,6 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         >
           ← Back to Menu
         </Button>
-        <h1 className="solo-mode-scene__title">Solo Mode</h1>
         {gameMode === 'auto' && isEncounterActive && (
           <div className="solo-mode-scene__speed-controls">
             <span>Speed:</span>

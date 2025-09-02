@@ -11,49 +11,43 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 2rem;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: var(--spacing-4) var(--spacing-6);
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-primary);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px var(--shadow-secondary);
 }
 
 .evolution-scene__back-button {
-  font-size: 0.9rem;
-}
-
-.evolution-scene__title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--accent-primary);
-  margin: 0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  font-size: var(--font-size-sm);
 }
 
 .evolution-scene__content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 2rem;
+  padding: var(--spacing-6);
   overflow-y: auto;
 }
 
 .evolution-scene__intro {
   text-align: center;
-  margin-bottom: 2rem;
-  max-width: 800px;
+  margin-bottom: var(--spacing-6);
+  max-width: 600px;
   margin-left: auto;
   margin-right: auto;
 }
 
 .evolution-scene__intro h2 {
-  font-size: 1.5rem;
+  font-size: var(--font-size-xl);
   color: var(--accent-secondary);
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-3);
 }
 
 .evolution-scene__intro p {
-  font-size: 1.1rem;
-  line-height: 1.6;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
   color: var(--text-secondary);
 }
 
@@ -62,20 +56,20 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  margin-bottom: 2rem;
-  padding: 0 1rem;
+  margin-bottom: var(--spacing-6);
+  padding: 0 var(--spacing-3);
 }
 
 .evolution-scene__panel-container {
   width: 100%;
-  max-width: 1400px;
+  max-width: 1200px;
   display: flex;
   justify-content: center;
 }
 
 .evolution-scene__quick-actions {
   display: flex;
-  gap: 1rem;
+  gap: var(--spacing-3);
   justify-content: center;
   flex-wrap: wrap;
 }
@@ -83,17 +77,13 @@
 /* Mobile responsiveness */
 @media (max-width: 768px) {
   .evolution-scene__header {
-    padding: 1rem;
+    padding: var(--spacing-3);
     flex-direction: column;
-    gap: 1rem;
-  }
-
-  .evolution-scene__title {
-    font-size: 1.5rem;
+    gap: var(--spacing-3);
   }
 
   .evolution-scene__content {
-    padding: 1rem;
+    padding: var(--spacing-4);
   }
 
   .evolution-scene__panel-wrapper {
@@ -105,11 +95,11 @@
   }
 
   .evolution-scene__intro h2 {
-    font-size: 1.3rem;
+    font-size: var(--font-size-lg);
   }
 
   .evolution-scene__intro p {
-    font-size: 1rem;
+    font-size: var(--font-size-sm);
   }
 
   .evolution-scene__quick-actions {

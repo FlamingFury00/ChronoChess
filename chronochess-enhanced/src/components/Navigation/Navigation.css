@@ -9,37 +9,38 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* tighter header for clarity */
-  padding: calc(var(--spacing-sm)) calc(var(--spacing-md));
+  padding: var(--spacing-4) var(--spacing-6);
   background: var(--bg-surface-elevated);
   border-bottom: 1px solid var(--border-primary);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
-  gap: var(--spacing-sm);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px var(--shadow-secondary);
+  gap: var(--spacing-4);
+  min-height: 64px;
 }
 
 .navigation--header .navigation__items {
   display: flex;
   align-items: center;
-  gap: calc(var(--spacing-xs));
+  gap: var(--spacing-2);
 }
 
 .navigation--header .navigation__item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: calc(var(--spacing-xs)) calc(var(--spacing-sm));
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
   border-radius: var(--radius-sm);
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all var(--duration-normal) var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out);
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  font-size: 0.95rem;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .navigation--header .navigation__item::before {
@@ -52,15 +53,15 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(122, 162, 247, 0.1) 50%,
+    rgba(122, 162, 247, 0.05) 50%,
     transparent 100%
   );
-  transition: left var(--duration-slow) var(--ease-out);
+  transition: left var(--duration-normal) var(--ease-out);
   z-index: 0;
 }
 
 .navigation--header .navigation__item:hover {
-  background: var(--bg-glass-weak, rgba(255, 255, 255, 0.02));
+  background: var(--bg-glass-weak);
   border-color: var(--border-secondary);
   color: var(--text-primary);
 }
@@ -70,10 +71,10 @@
 }
 
 .navigation--header .navigation__item--active {
-  background: var(--bg-glass-strong);
+  background: var(--bg-glass);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
-  box-shadow: 0 0 0 1px rgba(122, 162, 247, 0.08);
+  box-shadow: 0 0 0 1px rgba(122, 162, 247, 0.1);
 }
 
 /* === SIDEBAR VARIANT === */
@@ -142,29 +143,19 @@
 /* === BOTTOM VARIANT === */
 .navigation--bottom {
   position: fixed;
-  /* pinned to viewport bottom; safe-area inset is applied to padding so content stays visible */
   bottom: 0;
   left: 0;
   right: 0;
   z-index: var(--z-fixed);
   background: var(--bg-surface-elevated);
   border-top: 1px solid var(--border-primary);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  /* Expose a height variable so other parts of the app can reserve space */
-  --bottom-nav-height: calc(56px + env(safe-area-inset-bottom)); /* default estimate */
-
-  padding: calc(var(--spacing-xs) + 2px) calc(var(--spacing-sm));
-  /* Apply safe-area inset inside padding so the bar sits above the home indicator */
-  padding-bottom: calc(var(--spacing-xs) + env(safe-area-inset-bottom, 0));
-
-  /* Ensure bar is not taller than expected */
-  box-sizing: border-box;
-  box-shadow: 0 -2px 16px var(--shadow-secondary);
-  /* Allow smooth hide/show transitions */
-  transition:
-    transform 280ms var(--ease-out),
-    opacity 200ms var(--ease-out);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 -1px 3px var(--shadow-secondary);
+  padding: var(--spacing-2) var(--spacing-4);
+  padding-bottom: calc(var(--spacing-2) + env(safe-area-inset-bottom, 0));
+  transition: transform 200ms var(--ease-out);
+  min-height: 64px;
 }
 
 .navigation--bottom .navigation__items {
@@ -188,16 +179,24 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-xs);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
   background: transparent;
   border: none;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  min-width: 60px;
+  transition: all var(--duration-fast) var(--ease-out);
+  min-width: 56px;
   position: relative;
+  font-size: var(--font-size-xs);
+}
+
+.navigation--bottom .navigation__item:hover,
+.navigation--bottom .navigation__item--active {
+  background: var(--bg-glass);
+  color: var(--accent-primary);
+  transform: translateY(-1px);
 }
 
 .navigation--bottom .navigation__item:hover,

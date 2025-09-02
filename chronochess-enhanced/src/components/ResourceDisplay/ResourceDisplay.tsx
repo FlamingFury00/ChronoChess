@@ -8,6 +8,7 @@ interface ResourceDisplayProps {
   showGenerationRates?: boolean;
   showProgressBars?: boolean;
   className?: string;
+  variant?: 'horizontal' | 'vertical' | 'grid' | 'menu';
 }
 
 interface ResourceAnimation {
@@ -19,10 +20,11 @@ interface ResourceAnimation {
 }
 
 const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
-  compact = false,
+  compact = true,
   showGenerationRates = true,
   showProgressBars = false,
   className = '',
+  variant = 'horizontal',
 }) => {
   // Subscribe specifically to the `resources` slice so this component
   // reliably rerenders when resources change across the app.
@@ -164,6 +166,7 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
   const resourceDisplayClass = [
     'resource-display',
     compact && 'resource-display--compact',
+    `resource-display--${variant}`,
     className,
   ]
     .filter(Boolean)
@@ -184,7 +187,11 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
             <div
               key={resourceType}
               className="resource-display__item"
+              data-resource={resourceType}
               style={{ '--resource-color': getResourceColor(resourceType) } as React.CSSProperties}
+              tabIndex={0}
+              role="button"
+              aria-label={`${getResourceName(resourceType)}: ${formatResourceValue(value)}`}
             >
               <div className="resource-display__header">
                 <span className="resource-display__icon" aria-hidden="true">
@@ -198,15 +205,28 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
               </div>
 
               <div className="resource-display__value">
-                <span className="resource-display__amount">{formatResourceValue(value)}</span>
+                <span
+                  className="resource-display__amount"
+                  data-value={formatResourceValue(value)}
+                  title={`Exact amount: ${value}`}
+                >
+                  {formatResourceValue(value)}
+                </span>
                 {showGenerationRates && effectiveRate > 0 && (
-                  <span className="resource-display__rate">
+                  <span
+                    className="resource-display__rate"
+                    title={`Generation rate: ${formatGenerationRate(effectiveRate)} per second${multiplier > 1 ? ` (${multiplier}x multiplier)` : ''}`}
+                  >
                     {formatGenerationRate(effectiveRate)}
                   </span>
                 )}
                 {/* Persistent CSS-only pulse indicator for active generation (decoupled from JS updates) */}
                 {effectiveRate > 0 && (
-                  <span className="resource-display__pulse" aria-hidden="true" />
+                  <span
+                    className="resource-display__pulse"
+                    aria-hidden="true"
+                    title="Actively generating"
+                  />
                 )}
               </div>
 
@@ -229,6 +249,11 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
                     <div
                       key={anim.id}
                       className={`resource-display__animation resource-display__animation--${anim.type}`}
+                      data-animation-type={anim.type}
+                      data-resource={anim.resourceType}
+                      role="status"
+                      aria-live="polite"
+                      aria-label={`${anim.type === 'gain' ? 'Gained' : 'Spent'} ${formatResourceValue(anim.amount)} ${getResourceName(anim.resourceType)}`}
                     >
                       {anim.type === 'gain' ? '+' : '-'}
                       {formatResourceValue(anim.amount)}
@@ -247,7 +272,13 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
             const m = Number(multiplier as any) || 0;
             if (m > 1) {
               return (
-                <div key={resourceType} className="resource-display__multiplier">
+                <div
+                  key={resourceType}
+                  className="resource-display__multiplier"
+                  title={`${getResourceName(resourceType)} generation multiplier: ${m.toFixed(1)}x`}
+                  tabIndex={0}
+                  role="button"
+                >
                   <span className="resource-display__multiplier-icon">
                     {getResourceIcon(resourceType)}
                   </span>

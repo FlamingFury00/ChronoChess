@@ -1,4 +1,4 @@
-/* Modern MenuScene with immersive design */
+/* Clean MenuScene with professional design */
 .menu-scene {
   position: relative;
   width: 100vw;
@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden; /* keep desktop behavior to avoid visible shifting */
+  overflow: hidden;
 
   /* Sophisticated background gradient */
   background:
@@ -57,7 +57,8 @@
     120px 120px,
     160px 160px;
   animation: particles-float var(--duration-slowest) linear infinite;
-  will-change: transform, opacity; /* hint to compositor to reduce repaint jank */
+  will-change: transform, opacity;
+  opacity: 0.3;
 }
 
 /* Reduce or hide heavy visual layers on small screens for performance & readability */
@@ -131,18 +132,18 @@
   }
 }
 
-/* Modern content container */
+/* Clean content container */
 .menu-scene__content {
   position: relative;
   z-index: 1;
   max-width: 720px;
   width: 90%;
   text-align: center;
-  padding: var(--spacing-2xl);
+  padding: var(--spacing-8);
 
   /* Enhanced glass morphism */
   background: var(--bg-surface);
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-lg);
   border: 1px solid var(--border-primary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -154,8 +155,7 @@
     0 0 0 1px rgba(122, 162, 247, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
-  /* Entrance animation */
-  animation: contentEnter var(--duration-slow) var(--ease-out);
+  animation: contentEnter var(--duration-normal) var(--ease-out);
 }
 
 @keyframes contentEnter {
@@ -169,10 +169,10 @@
   }
 }
 
-/* Modern header design */
+/* Clean header design */
 .menu-scene__header {
-  margin-bottom: var(--spacing-2xl);
-  animation: headerSlideIn var(--duration-slow) var(--ease-out) 0.2s both;
+  margin-bottom: var(--spacing-6);
+  animation: headerSlideIn var(--duration-normal) var(--ease-out) 0.2s both;
 }
 
 @keyframes headerSlideIn {
@@ -186,14 +186,12 @@
   }
 }
 
-/* Spectacular title design */
+/* Clean title design */
 .menu-scene__title {
-  font-size: clamp(var(--font-size-4xl), 8vw, var(--font-size-6xl));
+  font-size: clamp(var(--font-size-3xl), 6vw, var(--font-size-5xl));
   font-weight: var(--font-weight-bold);
-  margin: 0 0 var(--spacing-md) 0;
+  margin: 0 0 var(--spacing-3) 0;
   line-height: var(--line-height-tight);
-
-  /* Advanced text effects */
   background: linear-gradient(
     135deg,
     var(--accent-primary) 0%,
@@ -204,10 +202,8 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
 
-  /* Subtle glow effect */
+  /* Subtle glow effect with animation */
   filter: drop-shadow(0 0 20px rgba(122, 162, 247, 0.3));
-
-  /* Text animation */
   animation: titleGlow 4s ease-in-out infinite alternate;
 }
 
@@ -228,16 +224,15 @@
   color: var(--accent-secondary);
 }
 
-/* Elegant subtitle */
+/* Clean subtitle */
 .menu-scene__subtitle {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-lg);
   color: var(--text-secondary);
   margin: 0;
   font-style: italic;
   font-weight: var(--font-weight-light);
   opacity: 0.9;
-  letter-spacing: 0.5px;
-  animation: subtitleFadeIn var(--duration-slow) var(--ease-out) 0.4s both;
+  animation: subtitleFadeIn var(--duration-normal) var(--ease-out) 0.4s both;
 }
 
 @keyframes subtitleFadeIn {
@@ -251,22 +246,183 @@
   }
 }
 
-/* Enhanced stats display */
+/* Clean stats display with enhanced ResourceDisplay integration */
 .menu-scene__stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-2xl);
-  padding: var(--spacing-lg);
+  /* Host container for ResourceDisplay; no extra layout that could cause overflow */
+  margin-bottom: var(--spacing-6);
+  animation: statsSlideIn var(--duration-normal) var(--ease-out) 0.6s both;
+  width: 100%;
+}
 
-  /* Modern stats container */
-  background: var(--bg-glass-strong);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-secondary);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+/* MenuScene-specific ResourceDisplay styling */
+.menu-scene__resource-display {
+  /* Ensure perfect integration with MenuScene design */
+  margin: 0;
+}
 
-  animation: statsSlideIn var(--duration-slow) var(--ease-out) 0.6s both;
+.menu-scene__resource-display .resource-display__container {
+  /* Optimized for MenuScene layout - compact 4-column grid */
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+
+  /* Enhanced background that matches MenuScene aesthetic */
+  background:
+    linear-gradient(
+      135deg,
+      rgba(122, 162, 247, 0.02) 0%,
+      rgba(158, 206, 106, 0.015) 25%,
+      rgba(187, 154, 247, 0.02) 50%,
+      rgba(224, 175, 104, 0.015) 75%,
+      transparent 100%
+    ),
+    var(--bg-glass-strong);
+
+  /* Seamless integration shadows */
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.menu-scene__resource-display .resource-display__container::before {
+  /* Softer border animation for MenuScene */
+  opacity: 0.3;
+  animation-duration: 6s;
+}
+
+.menu-scene__resource-display .resource-display__item {
+  /* Compact but elegant cards for MenuScene */
+  min-height: 85px;
+  padding: var(--spacing-3);
+  display: flex !important;
+  flex-direction: column !important;
+  gap: var(--spacing-1);
+
+  /* Subtle styling that doesn't compete with navigation */
+  background:
+    radial-gradient(
+      circle at 70% 30%,
+      rgba(var(--resource-color-rgb, 122, 162, 247), 0.04) 0%,
+      transparent 60%
+    ),
+    var(--bg-surface);
+
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset,
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 0 12px rgba(var(--resource-color-rgb, 122, 162, 247), 0.03);
+}
+
+.menu-scene__resource-display .resource-display__item:hover {
+  /* Gentle hover that doesn't distract from main navigation */
+  transform: translateY(-2px) scale(1.01);
+
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 2px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 20px rgba(var(--resource-color-rgb, 122, 162, 247), 0.1);
+}
+
+.menu-scene__resource-display .resource-display__header {
+  display: flex !important;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin-bottom: var(--spacing-1);
+  flex-shrink: 0;
+}
+
+.menu-scene__resource-display .resource-display__icon {
+  /* Smaller, more refined icons for MenuScene */
+  width: 28px;
+  height: 28px;
+  font-size: var(--font-size-sm);
+  flex-shrink: 0;
+}
+
+.menu-scene__resource-display .resource-display__name {
+  /* Hide full names on compact layout */
+  display: none !important;
+}
+
+.menu-scene__resource-display .resource-display__abbr {
+  /* Show abbreviations on compact layout */
+  display: block !important;
+  font-size: var(--font-size-xs);
+  opacity: 1 !important;
+  color: var(--text-secondary) !important;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  flex: 1;
+}
+
+.menu-scene__resource-display .resource-display__value {
+  /* Ensure values are visible and properly spaced */
+  display: flex !important;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin-top: auto;
+  opacity: 1 !important;
+  flex-shrink: 0;
+}
+
+.menu-scene__resource-display .resource-display__amount {
+  /* Balanced sizing for MenuScene context */
+  font-size: var(--font-size-lg) !important;
+  display: block !important;
+  opacity: 1 !important;
+  font-weight: var(--font-weight-bold) !important;
+  line-height: 1.1;
+  text-align: left;
+
+  /* Use solid colors for maximum compatibility */
+  color: rgb(var(--resource-color-rgb, 122, 162, 247)) !important;
+  -webkit-text-fill-color: rgb(var(--resource-color-rgb, 122, 162, 247)) !important;
+
+  /* Remove any gradient backgrounds that might make text invisible */
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+
+  /* Simple visible text shadow */
+  text-shadow: 0 0 4px rgba(var(--resource-color-rgb, 122, 162, 247), 0.3) !important;
+  filter: none !important;
+}
+
+.menu-scene__resource-display .resource-display__rate {
+  /* Subtle generation rate display */
+  font-size: 0.625rem !important;
+  opacity: 0.7 !important;
+  display: block !important;
+  color: var(--accent-secondary) !important;
+  text-align: left;
+}
+
+.menu-scene__resource-display .resource-display__multipliers {
+  /* Hide multipliers in MenuScene for cleaner look */
+  display: none;
+}
+
+/* MenuScene pulse positioning - compact and unobtrusive */
+.menu-scene__resource-display .resource-display__pulse {
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  opacity: 0.8;
+}
+
+/* Hide floating generation animations in MenuScene */
+.menu-scene__resource-display .resource-display__animations {
+  display: none !important;
+}
+
+.menu-scene__resource-display .resource-display__animation {
+  display: none !important;
 }
 
 @keyframes statsSlideIn {
@@ -330,13 +486,13 @@
   text-shadow: 0 0 8px rgba(158, 206, 106, 0.3);
 }
 
-/* Modern navigation design */
+/* Clean navigation design */
 .menu-scene__nav {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-2xl);
-  animation: navSlideIn var(--duration-slow) var(--ease-out) 0.8s both;
+  gap: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  animation: navSlideIn var(--duration-normal) var(--ease-out) 0.8s both;
 }
 
 @keyframes navSlideIn {
@@ -350,93 +506,67 @@
   }
 }
 
-/* Enhanced navigation buttons */
+/* Clean navigation buttons */
 .menu-scene__nav-button {
   padding: 0;
   height: auto;
   background: var(--bg-glass);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  transition: all var(--duration-normal) var(--ease-out);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all var(--duration-fast) var(--ease-out);
   overflow: hidden;
   position: relative;
-}
-
-.menu-scene__nav-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(122, 162, 247, 0.1) 50%,
-    transparent 100%
-  );
-  transition: left var(--duration-slow) var(--ease-out);
-  z-index: 0;
 }
 
 .menu-scene__nav-button:hover {
   background: var(--bg-glass-strong);
   border-color: var(--accent-primary);
-  transform: translateY(-4px);
-  box-shadow:
-    0 12px 24px var(--shadow-secondary),
-    0 0 0 1px rgba(122, 162, 247, 0.2);
-}
-
-.menu-scene__nav-button:hover::before {
-  left: 100%;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px var(--shadow-secondary);
 }
 
 .menu-scene__nav-button--primary {
   background: var(--bg-surface-elevated);
   border-color: var(--accent-primary);
-  box-shadow: 0 4px 12px var(--shadow-accent);
+  box-shadow: 0 2px 8px var(--shadow-accent);
 }
 
 .menu-scene__nav-button--primary:hover {
   background: var(--bg-surface-elevated);
-  box-shadow:
-    0 16px 32px var(--shadow-accent),
-    0 0 0 1px rgba(122, 162, 247, 0.3);
+  box-shadow: 0 8px 16px var(--shadow-accent);
 }
 
-/* Enhanced button content */
+/* Clean button content */
 .menu-scene__nav-button-content {
   position: relative;
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
-  padding: var(--spacing-lg);
+  gap: var(--spacing-4);
+  padding: var(--spacing-4);
   text-align: left;
   width: 100%;
 }
 
 .menu-scene__nav-button-icon {
-  font-size: var(--font-size-3xl);
-  min-width: 3rem;
+  font-size: var(--font-size-2xl);
+  min-width: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 4px var(--shadow-secondary));
 }
 
 .menu-scene__nav-button-text {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-1);
   flex: 1;
 }
 
 .menu-scene__nav-button-title {
-  font-size: var(--font-size-xl);
+  font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   line-height: var(--line-height-tight);
@@ -449,11 +579,11 @@
   line-height: var(--line-height-relaxed);
 }
 
-/* Modern footer */
+/* Clean footer */
 .menu-scene__footer {
-  padding-top: var(--spacing-lg);
+  padding-top: var(--spacing-4);
   border-top: 1px solid var(--divider);
-  animation: footerFadeIn var(--duration-slow) var(--ease-out) 1s both;
+  animation: footerFadeIn var(--duration-normal) var(--ease-out) 1s both;
 }
 
 .menu-scene__footer-content {
@@ -495,6 +625,58 @@
     width: calc(100% - var(--spacing-lg));
   }
 
+  /* MenuScene ResourceDisplay mobile adaptation */
+  .menu-scene__resource-display .resource-display__container {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-2);
+    padding: var(--spacing-3);
+  }
+
+  .menu-scene__resource-display .resource-display__item {
+    min-height: 80px;
+    padding: var(--spacing-2);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-2);
+  }
+
+  .menu-scene__resource-display .resource-display__header {
+    margin-bottom: 0;
+  }
+
+  .menu-scene__resource-display .resource-display__icon {
+    width: 28px;
+    height: 28px;
+    font-size: var(--font-size-sm);
+  }
+
+  .menu-scene__resource-display .resource-display__name {
+    display: none;
+  }
+
+  .menu-scene__resource-display .resource-display__abbr {
+    display: inline-block;
+  }
+
+  .menu-scene__resource-display .resource-display__value {
+    margin-top: 0;
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-1);
+  }
+
+  .menu-scene__resource-display .resource-display__amount {
+    font-size: var(--font-size-base);
+    display: block !important;
+    opacity: 1 !important;
+  }
+
+  .menu-scene__resource-display .resource-display__rate {
+    font-size: 0.625rem;
+    display: block !important;
+    opacity: 0.7 !important;
+  }
+
   .menu-scene__stats {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-sm);
@@ -524,6 +706,21 @@
   .menu-scene__content {
     padding: var(--spacing-md);
     border-radius: var(--radius-lg);
+  }
+
+  /* Extra small mobile adaptation for ResourceDisplay */
+  .menu-scene__resource-display .resource-display__container {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-1);
+    padding: var(--spacing-2);
+  }
+
+  .menu-scene__resource-display .resource-display__item {
+    min-height: 70px;
+    padding: var(--spacing-2);
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-2);
   }
 
   .menu-scene__stats {

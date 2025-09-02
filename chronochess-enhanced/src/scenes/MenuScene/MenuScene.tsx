@@ -1,36 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { useGameStore } from '../../store';
-import {
-  PAWN_MARCH_TE_MULTIPLIER,
-  DEFAULT_GENERATION_RATES,
-  BASE_MANA_RATE,
-} from '../../resources/resourceConfig';
+import React from 'react';
 import { Button } from '../../components/common';
+import ResourceDisplay from '../../components/ResourceDisplay/ResourceDisplay';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import type { SceneProps } from '../types';
 import './MenuScene.css';
 
 export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
-  const { resources, getSoloModeStats, pieceEvolutions } = useGameStore();
-  const stats = getSoloModeStats();
-  const [showResourceGains, setShowResourceGains] = useState(false);
-
-  // Show resource generation indicator
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setShowResourceGains(true);
-      setTimeout(() => setShowResourceGains(false), 200);
-    }, 2000); // Flash every 2 seconds to show resources are generating
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Calculate generation rates based on piece evolutions
-  const teRate =
-    DEFAULT_GENERATION_RATES.temporalEssence +
-    pieceEvolutions.pawn.marchSpeed * PAWN_MARCH_TE_MULTIPLIER;
-  const amRate = BASE_MANA_RATE + pieceEvolutions.queen.manaRegenBonus;
-
   return (
     <div className="menu-scene scene">
       <div className="menu-scene__background">
@@ -47,31 +22,13 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         </header>
 
         <div className="menu-scene__stats">
-          <div
-            className={`menu-scene__stat ${showResourceGains ? 'menu-scene__stat--gaining' : ''}`}
-          >
-            <span className="menu-scene__stat-value">{Math.floor(resources.temporalEssence)}</span>
-            <span className="menu-scene__stat-label">Temporal Essence</span>
-            <span className="menu-scene__stat-rate">+{teRate.toFixed(1)}/s</span>
-          </div>
-          <div className="menu-scene__stat">
-            <span className="menu-scene__stat-value">{Math.floor(resources.mnemonicDust)}</span>
-            <span className="menu-scene__stat-label">Mnemonic Dust</span>
-            <span className="menu-scene__stat-rate">
-              +{DEFAULT_GENERATION_RATES.mnemonicDust.toFixed(1)}/s
-            </span>
-          </div>
-          <div
-            className={`menu-scene__stat ${showResourceGains ? 'menu-scene__stat--gaining' : ''}`}
-          >
-            <span className="menu-scene__stat-value">{resources.arcaneMana.toFixed(1)}</span>
-            <span className="menu-scene__stat-label">Arcane Mana</span>
-            <span className="menu-scene__stat-rate">+{amRate.toFixed(2)}/s</span>
-          </div>
-          <div className="menu-scene__stat">
-            <span className="menu-scene__stat-value">{stats.encountersWon}</span>
-            <span className="menu-scene__stat-label">Victories</span>
-          </div>
+          <ResourceDisplay
+            compact={true}
+            variant="menu"
+            className="menu-scene__resource-display"
+            showGenerationRates={true}
+            showProgressBars={false}
+          />
         </div>
 
         <nav className="menu-scene__nav">

@@ -15,7 +15,6 @@ export const SettingsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         >
           ← Back to Menu
         </Button>
-        <h1 className="settings-scene__title">Settings</h1>
       </header>
 
       <div className="settings-scene__content">

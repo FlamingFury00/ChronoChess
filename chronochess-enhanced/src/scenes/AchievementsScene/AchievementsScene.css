@@ -11,34 +11,36 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 2rem;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: var(--spacing-4) var(--spacing-6);
+  background: var(--bg-surface-elevated);
+  border-bottom: 1px solid var(--border-primary);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 1px 3px var(--shadow-secondary);
 }
 
 .achievements-scene__header-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--spacing-3);
 }
 
 .achievements-scene__claim-all-button {
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0.5rem 1rem;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--spacing-2) var(--spacing-4);
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
   border: none;
   border-radius: var(--radius-md);
   color: white;
   cursor: pointer;
-  transition: all var(--duration-normal) var(--ease-out);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all var(--duration-fast) var(--ease-out);
+  box-shadow: 0 1px 3px var(--shadow-secondary);
 }
 
 .achievements-scene__claim-all-button:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 6px var(--shadow-secondary);
   background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary));
 }
 
@@ -50,30 +52,22 @@
 
 .achievements-scene__claim-all-button:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px var(--shadow-secondary);
 }
 
 .achievements-scene__back-button {
-  font-size: 0.9rem;
-}
-
-.achievements-scene__title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--accent-primary);
-  margin: 0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  font-size: var(--font-size-sm);
 }
 
 .achievements-scene__stats {
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
 }
 
 .achievements-scene__stat {
   background: var(--bg-glass);
-  padding: 0.25rem 0.75rem;
-  border-radius: var(--radius-md);
+  padding: var(--spacing-1) var(--spacing-3);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-primary);
 }
 
@@ -81,22 +75,22 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 2rem;
+  padding: var(--spacing-6);
   overflow-y: auto;
 }
 
 .achievements-scene__intro {
   text-align: center;
-  margin-bottom: 2rem;
-  max-width: 800px;
+  margin-bottom: var(--spacing-6);
+  max-width: 600px;
   margin-left: auto;
   margin-right: auto;
 }
 
 .achievements-scene__intro h2 {
-  font-size: 1.5rem;
+  font-size: var(--font-size-xl);
   color: var(--accent-secondary);
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-3);
 }
 
 .achievements-scene__intro p {
@@ -347,14 +341,14 @@
 /* Mobile responsiveness */
 @media (max-width: 768px) {
   .achievements-scene__header {
-    padding: 1rem;
+    padding: var(--spacing-3);
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-3);
   }
 
   .achievements-scene__header-actions {
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-2);
     width: 100%;
   }
 
@@ -367,17 +361,13 @@
     text-align: center;
   }
 
-  .achievements-scene__title {
-    font-size: 1.5rem;
-  }
-
   .achievements-scene__content {
-    padding: 1rem;
+    padding: var(--spacing-4);
   }
 
   .achievements-scene__grid {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: var(--spacing-3);
   }
 
   .achievements-scene__filter-buttons {
@@ -385,22 +375,22 @@
   }
 
   .achievements-scene__intro h2 {
-    font-size: 1.3rem;
+    font-size: var(--font-size-lg);
   }
 
   .achievements-scene__intro p {
-    font-size: 1rem;
+    font-size: var(--font-size-sm);
   }
 
   .achievement-card {
-    padding: 1rem;
+    padding: var(--spacing-4);
   }
 
   .achievement-card__title {
-    font-size: 1.1rem;
+    font-size: var(--font-size-base);
   }
 
   .achievement-card__description {
-    font-size: 0.9rem;
+    font-size: var(--font-size-xs);
   }
 }

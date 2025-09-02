@@ -15,7 +15,6 @@ export const EvolutionScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         >
           ← Back to Menu
         </Button>
-        <h1 className="evolution-scene__title">Evolution Lab</h1>
         <ResourceDisplay compact />
       </header>
 

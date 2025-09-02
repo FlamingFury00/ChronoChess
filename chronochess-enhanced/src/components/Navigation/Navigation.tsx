@@ -34,39 +34,34 @@ const Navigation: React.FC<NavigationProps> = ({
   const [isHidden, setIsHidden] = useState(false);
   const stats = getSoloModeStats();
 
-  // Navigation items with dynamic badges
+  // Navigation items with simplified structure
   const navItems: NavItem[] = [
     {
       id: 'menu',
       label: 'Home',
       icon: '🏠',
-      description: 'Main menu and overview',
     },
     {
       id: 'soloMode',
-      label: 'Solo Mode',
+      label: 'Solo',
       icon: '⚔️',
-      description: 'Battle through encounters',
-      badge: stats.encountersWon > 0 ? stats.encountersWon : undefined,
+      badge: stats.encountersWon > 0 ? stats.encountersWon.toString() : undefined,
     },
     {
       id: 'evolution',
       label: 'Evolution',
       icon: '🧬',
-      description: 'Upgrade your pieces',
       badge: Math.floor(resources.temporalEssence) > 10 ? '!' : undefined,
     },
     {
       id: 'achievements',
       label: 'Achievements',
       icon: '🏆',
-      description: 'Track your progress',
     },
     {
       id: 'settings',
       label: 'Settings',
       icon: '⚙️',
-      description: 'Game preferences',
     },
   ];
 

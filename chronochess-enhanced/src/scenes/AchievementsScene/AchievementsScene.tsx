@@ -619,7 +619,6 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         >
           ← Back to Menu
         </Button>
-        <h1 className="achievements-scene__title">Achievements</h1>
         <div className="achievements-scene__header-actions">
           {getUnclaimedCount() > 0 && (
             <Button

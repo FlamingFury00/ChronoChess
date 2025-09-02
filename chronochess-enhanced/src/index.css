@@ -70,15 +70,33 @@
   --shadow-tertiary: rgba(0, 0, 0, 0.08);
   --shadow-accent: rgba(122, 162, 247, 0.25);
 
-  /* Spacing Scale */
-  --spacing-xs: 0.25rem;
-  --spacing-sm: 0.5rem;
-  --spacing-md: 1rem;
-  --spacing-lg: 1.5rem;
-  --spacing-xl: 2rem;
-  --spacing-2xl: 3rem;
-  --spacing-3xl: 4rem;
-  --spacing-4xl: 6rem;
+  /* Spacing Scale - Strict 8px Grid System */
+  --spacing-0: 0px;
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+  --spacing-7: 32px;
+  --spacing-8: 40px;
+  --spacing-9: 48px;
+  --spacing-10: 56px;
+  --spacing-11: 64px;
+  --spacing-12: 72px;
+  --spacing-13: 80px;
+  --spacing-14: 88px;
+  --spacing-15: 96px;
+  --spacing-16: 104px;
+
+  /* Legacy spacing for compatibility */
+  --spacing-xs: var(--spacing-1);
+  --spacing-sm: var(--spacing-2);
+  --spacing-md: var(--spacing-4);
+  --spacing-lg: var(--spacing-6);
+  --spacing-xl: var(--spacing-8);
+  --spacing-2xl: var(--spacing-12);
+  --spacing-3xl: var(--spacing-16);
 
   /* Border Radius */
   --radius-xs: 4px;
