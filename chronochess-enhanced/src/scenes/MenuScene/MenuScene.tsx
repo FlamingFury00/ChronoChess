@@ -1,11 +1,77 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../components/common';
 import ResourceDisplay from '../../components/ResourceDisplay/ResourceDisplay';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { getCurrentUser } from '../../lib/supabaseAuth';
+import { getCurrentUserProfile } from '../../lib/profileService';
+import { checkGuestDataStatus, recoverGuestData } from '../../lib/guestDataManager';
 import type { SceneProps } from '../types';
+import type { User } from '@supabase/supabase-js';
+import type { UserProfile } from '../../lib/profileService';
 import './MenuScene.css';
 
 export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [showDataRecovery, setShowDataRecovery] = useState(false);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const currentUser = await getCurrentUser();
+      setUser(currentUser);
+
+      if (currentUser) {
+        const profile = await getCurrentUserProfile();
+        setUserProfile(profile);
+      } else {
+        // For guest users, check if they might have lost data or need recovery
+        const dataStatus = checkGuestDataStatus();
+        if (!dataStatus.hasLocalData) {
+          // Check if there might be recoverable data from various sources
+          setTimeout(async () => {
+            try {
+              // Check localStorage for any ChronoChess-related data that might be recoverable
+              const localStorageKeys = Object.keys(localStorage);
+              const hasRecoverableData = localStorageKeys.some(
+                key =>
+                  (key.includes('chronochess') && key !== 'chronochess_save') ||
+                  key.includes('chrono_') ||
+                  key.includes('chess_')
+              );
+
+              // Also check if there are any backup saves
+              const hasBackupSave = localStorage.getItem('chronochess_save_backup') !== null;
+
+              if (hasRecoverableData || hasBackupSave) {
+                console.log('🔧 Potential recoverable guest data detected');
+                setShowDataRecovery(true);
+              }
+            } catch (err) {
+              console.warn('Failed to check for recoverable data:', err);
+            }
+          }, 1500); // Show after a delay to avoid immediate popup on every fresh start
+        }
+      }
+    };
+    checkUser();
+  }, []);
+
+  const handleDataRecovery = async () => {
+    try {
+      const { recovered, sources } = await recoverGuestData();
+      if (recovered) {
+        console.log(`✅ Data recovered from: ${sources.join(', ')}`);
+        // Refresh the page or reload data
+        window.location.reload();
+      } else {
+        console.log('❌ No data could be recovered');
+      }
+    } catch (err) {
+      console.error('Failed to recover data:', err);
+    }
+    setShowDataRecovery(false);
+  };
+
   return (
     <div className="menu-scene scene">
       <div className="menu-scene__background">
@@ -14,6 +80,39 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
 
       <div className="menu-scene__content">
         <header className="menu-scene__header">
+          <div className="menu-scene__header-top">
+            {user && userProfile ? (
+              <div className="menu-scene__user-status">
+                <span className="menu-scene__user-welcome">
+                  Welcome back, {userProfile.username}!
+                </span>
+                <div className="menu-scene__user-info">
+                  <span className="menu-scene__user-level">Level {userProfile.level}</span>
+                  <span className="menu-scene__user-xp">{userProfile.experience_points} XP</span>
+                </div>
+                <Button
+                  onClick={() => onSceneChange('profile')}
+                  variant="ghost"
+                  size="small"
+                  className="menu-scene__profile-button"
+                >
+                  👤 Profile
+                </Button>
+              </div>
+            ) : (
+              <div className="menu-scene__auth-prompt">
+                <Button
+                  onClick={() => onSceneChange('auth')}
+                  variant="ghost"
+                  size="small"
+                  className="menu-scene__auth-button"
+                >
+                  🔑 Sign In to Save Progress
+                </Button>
+              </div>
+            )}
+          </div>
+
           <h1 className="menu-scene__title">
             <span className="menu-scene__title-chrono">Chrono</span>
             <span className="menu-scene__title-chess">Chess</span>
@@ -99,6 +198,34 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
             </div>
             <p className="menu-scene__version">ChronoChess v1.0</p>
           </div>
+
+          {/* Guest data recovery option */}
+          {!user && showDataRecovery && (
+            <div className="menu-scene__data-recovery">
+              <p className="menu-scene__recovery-text">
+                🔧 It looks like you might have lost progress data. Would you like to try recovering
+                it?
+              </p>
+              <div className="menu-scene__recovery-actions">
+                <Button
+                  onClick={handleDataRecovery}
+                  variant="primary"
+                  size="small"
+                  className="menu-scene__recovery-button"
+                >
+                  Try Recovery
+                </Button>
+                <Button
+                  onClick={() => setShowDataRecovery(false)}
+                  variant="ghost"
+                  size="small"
+                  className="menu-scene__recovery-dismiss"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
         </footer>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useToast } from '../common/ToastProvider';
 import { useConfirm } from '../common/ConfirmProvider';
-import { useGameStore } from '../../store';
+import { useGameStore, resetGameStore } from '../../store';
 import Panel from '../common/Panel/Panel';
 import Button from '../common/Button/Button';
 import './SettingsPanel.css';
@@ -50,14 +50,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
       cancelText: 'Cancel',
     });
     if (confirmed) {
-      const store = useGameStore.getState();
-      store.reset();
-      // Clear all save data
-      localStorage.removeItem('chronochess_save');
-      console.log('🔄 Game reset successfully!');
-      showToast('Game reset successfully!', { level: 'info' });
-      // Reload to reflect changes
-      window.location.reload();
+      try {
+        await resetGameStore();
+        console.log('🔄 Game reset successfully!');
+        showToast('Game reset successfully!', { level: 'info' });
+        // Reload to reflect changes
+        window.location.reload();
+      } catch (err) {
+        console.error('Failed to reset game:', err);
+        showToast('Failed to reset game. Please try again.', { level: 'error' });
+      }
     }
   };
 

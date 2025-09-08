@@ -165,24 +165,30 @@ describe('Claim All Rewards Functionality', () => {
 
     it('should handle partial claiming correctly', async () => {
       // Unlock multiple achievements
-      await progressTracker.unlockAchievement('first_win'); // 5
-      await progressTracker.unlockAchievement('win_streak_5'); // 15
-      await progressTracker.unlockAchievement('pawn_master'); // 50
+      await progressTracker.unlockAchievement('first_win'); // expected reward documented in tracker config
+      await progressTracker.unlockAchievement('win_streak_5');
+      await progressTracker.unlockAchievement('pawn_master');
+
+      // Capture rewards dynamically to remain resilient to config changes
+      const allBeforeClaim = await progressTracker.getAchievements();
+      const rewardsMap: Record<string, number> = {};
+      allBeforeClaim.forEach(a => {
+        rewardsMap[a.id] = a.reward?.aetherShards || 0;
+      });
 
       // Claim only some of them
       await progressTracker.markAchievementClaimed('first_win');
       await progressTracker.markAchievementClaimed('pawn_master');
 
-      const achievements = await progressTracker.getAchievements();
-
-      // Calculate unclaimed rewards (only win_streak_5 = 15)
-      const unclaimedRewards = achievements
+      const achievementsAfter = await progressTracker.getAchievements();
+      const unclaimedRewards = achievementsAfter
         .filter(a => !a.claimed)
-        .reduce((total, achievement) => {
-          return total + (achievement.reward?.aetherShards || 0);
-        }, 0);
+        .reduce((total, achievement) => total + (achievement.reward?.aetherShards || 0), 0);
 
-      expect(unclaimedRewards).toBe(15);
+      // Expected remainder is total minus claimed rewards
+      const claimedTotal = (rewardsMap['first_win'] || 0) + (rewardsMap['pawn_master'] || 0);
+      const expectedRemainder = Object.values(rewardsMap).reduce((a, b) => a + b, 0) - claimedTotal;
+      expect(unclaimedRewards).toBe(expectedRemainder);
     });
   });
 });

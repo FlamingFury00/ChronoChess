@@ -2,6 +2,7 @@ import type { GameState } from '../engine/types';
 import type { ResourceState } from '../resources/types';
 import type { IPieceEvolution } from '../evolution/types';
 import type { GameSettings } from '../store/types';
+import type { PieceEvolutionData } from '../store/pieceEvolutionStore';
 
 // Enhanced save data structure with versioning and metadata
 export interface SaveData {
@@ -25,6 +26,18 @@ export interface SaveData {
   playerStats?: PlayerStatistics;
   achievements?: Achievement[];
   unlockedContent?: UnlockedContent;
+
+  // Store-specific extras (optional, used by UI store persistence)
+  pieceEvolutions?: PieceEvolutionData;
+  soloModeStats?: {
+    encountersWon: number;
+    encountersLost: number;
+    totalEncounters: number;
+  };
+  unlockedEvolutions?: string[];
+  gameMode?: 'auto' | 'manual';
+  knightDashCooldown?: number;
+  manualModePieceStates?: Record<string, any>;
 }
 
 // Player statistics for progress tracking
@@ -151,4 +164,21 @@ export interface ExportData {
     customSettings?: any;
     modData?: any;
   };
+}
+
+// Helper type for passing extras into SaveSystem
+export interface SaveSystemExtras {
+  pieceEvolutions?: PieceEvolutionData;
+  soloModeStats?: {
+    encountersWon: number;
+    encountersLost: number;
+    totalEncounters: number;
+  };
+  unlockedEvolutions?: string[];
+  gameMode?: 'auto' | 'manual';
+  knightDashCooldown?: number;
+  manualModePieceStates?: Record<string, any>;
+  moveHistory?: any[];
+  undoStack?: GameState[];
+  redoStack?: GameState[];
 }

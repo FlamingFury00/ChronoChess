@@ -293,9 +293,11 @@ export class ProgressTracker {
 
     this.initPromise = (async () => {
       try {
+        console.log('📊 Initializing progress database...');
         await this.db.initialize();
 
         // Load cached data
+        console.log('📊 Loading cached progress data...');
         await this.loadCachedData();
 
         // Mark initialized before reconciliation to avoid deadlocks: reconciliation
@@ -306,6 +308,7 @@ export class ProgressTracker {
         // players who reached milestones before achievements existed still get
         // their rewards (and can claim them).
         try {
+          console.log('📊 Reconciling achievements with saved stats...');
           await this.reconcileAchievementsWithStats();
         } catch (err) {
           console.warn('Failed to reconcile achievements with saved stats:', err);
@@ -313,12 +316,20 @@ export class ProgressTracker {
 
         // Attempt to flush any pending achievements stored in localStorage
         try {
+          console.log('📊 Flushing pending achievements...');
           await this.flushPendingAchievements();
         } catch (err) {
           console.warn('Failed to flush pending achievements during init:', err);
         }
 
         console.log('✅ ProgressTracker initialized successfully');
+        console.log(
+          `📊 Loaded ${this.achievementsCache.length} achievements, ${Object.keys(this.statisticsCache || {}).length} stats`
+        );
+      } catch (error) {
+        console.error('❌ Failed to initialize ProgressTracker:', error);
+        // Don't rethrow - allow the game to continue with limited functionality
+        this.isInitialized = true; // Mark as initialized to prevent infinite retries
       } finally {
         // Clear the initPromise so subsequent tests or runtime code can re-run initialization
         this.initPromise = null;

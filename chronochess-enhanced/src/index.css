@@ -295,7 +295,8 @@ body {
   padding: 0;
   min-width: 320px;
   min-height: 100vh;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   touch-action: manipulation;
 
   /* Modern scrollbar */

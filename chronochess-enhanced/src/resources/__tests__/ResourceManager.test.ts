@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ResourceManager } from '../ResourceManager';
+import {
+  DEFAULT_GENERATION_RATES,
+  DEFAULT_BONUS_MULTIPLIERS,
+  DEFAULT_OFFLINE_EFFICIENCY,
+} from '../resourceConfig';
 import type { ResourceCost, ResourceGains, GenerationBonus } from '../types';
 
 describe('ResourceManager', () => {
@@ -26,17 +31,19 @@ describe('ResourceManager', () => {
     it('should initialize with default generation rates', () => {
       const state = resourceManager.getResourceState();
 
-      expect(state.generationRates.temporalEssence).toBe(1);
-      expect(state.generationRates.mnemonicDust).toBe(0.1);
-      expect(state.generationRates.arcaneMana).toBe(0.05);
+      expect(state.generationRates.temporalEssence).toBe(DEFAULT_GENERATION_RATES.temporalEssence);
+      expect(state.generationRates.mnemonicDust).toBe(DEFAULT_GENERATION_RATES.mnemonicDust);
+      expect(state.generationRates.arcaneMana).toBe(DEFAULT_GENERATION_RATES.arcaneMana);
     });
 
     it('should initialize with default bonus multipliers', () => {
       const state = resourceManager.getResourceState();
 
-      expect(state.bonusMultipliers.temporalEssence).toBe(1);
-      expect(state.bonusMultipliers.mnemonicDust).toBe(1);
-      expect(state.bonusMultipliers.arcaneMana).toBe(1);
+      expect(state.bonusMultipliers.temporalEssence).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence
+      );
+      expect(state.bonusMultipliers.mnemonicDust).toBe(DEFAULT_BONUS_MULTIPLIERS.mnemonicDust);
+      expect(state.bonusMultipliers.arcaneMana).toBe(DEFAULT_BONUS_MULTIPLIERS.arcaneMana);
     });
   });
 
@@ -141,8 +148,12 @@ describe('ResourceManager', () => {
       resourceManager.applyGenerationBonuses(bonuses);
       const state = resourceManager.getResourceState();
 
-      expect(state.bonusMultipliers.temporalEssence).toBe(2);
-      expect(state.bonusMultipliers.mnemonicDust).toBe(1.5);
+      expect(state.bonusMultipliers.temporalEssence).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2
+      );
+      expect(state.bonusMultipliers.mnemonicDust).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.mnemonicDust * 1.5
+      );
     });
 
     it('should stack multiple bonuses multiplicatively', () => {
@@ -150,7 +161,9 @@ describe('ResourceManager', () => {
       resourceManager.addGenerationBonus('temporalEssence', 1.5);
 
       const state = resourceManager.getResourceState();
-      expect(state.bonusMultipliers.temporalEssence).toBe(3); // 1 * 2 * 1.5
+      expect(state.bonusMultipliers.temporalEssence).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2 * 1.5
+      );
     });
 
     it('should update generation rates', () => {
@@ -172,7 +185,7 @@ describe('ResourceManager', () => {
       resourceManager.addGenerationBonus('temporalEssence', 3);
 
       const ratePerSecond = resourceManager.getGenerationRatePerSecond('temporalEssence');
-      expect(ratePerSecond).toBe(6); // 2 * 3
+      expect(ratePerSecond).toBeCloseTo(2 * (DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 3));
     });
   });
 
@@ -181,9 +194,25 @@ describe('ResourceManager', () => {
       const timeAway = 60 * 1000; // 1 minute
       const result = resourceManager.calculateOfflineProgress(timeAway);
 
-      expect(result.gains.temporalEssence).toBeCloseTo(48); // 1 * 60 * 0.8 (offline efficiency)
-      expect(result.gains.mnemonicDust).toBeCloseTo(4.8); // 0.1 * 60 * 0.8
-      expect(result.gains.arcaneMana).toBeCloseTo(2.4); // 0.05 * 60 * 0.8
+      const seconds = 60;
+      expect(result.gains.temporalEssence).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.temporalEssence *
+          seconds *
+          DEFAULT_BONUS_MULTIPLIERS.temporalEssence *
+          DEFAULT_OFFLINE_EFFICIENCY
+      );
+      expect(result.gains.mnemonicDust).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.mnemonicDust *
+          seconds *
+          DEFAULT_BONUS_MULTIPLIERS.mnemonicDust *
+          DEFAULT_OFFLINE_EFFICIENCY
+      );
+      expect(result.gains.arcaneMana).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.arcaneMana *
+          seconds *
+          DEFAULT_BONUS_MULTIPLIERS.arcaneMana *
+          DEFAULT_OFFLINE_EFFICIENCY
+      );
       expect(result.timeAwayMs).toBe(timeAway);
       expect(result.wasCaped).toBe(false);
     });
@@ -206,7 +235,12 @@ describe('ResourceManager', () => {
       const timeAway = 60 * 1000; // 1 minute
       const result = manager.calculateOfflineProgress(timeAway);
 
-      expect(result.gains.temporalEssence).toBeCloseTo(30); // 1 * 60 * 0.5
+      const expected =
+        DEFAULT_GENERATION_RATES.temporalEssence *
+        60 *
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence *
+        0.5;
+      expect(result.gains.temporalEssence).toBeCloseTo(expected);
     });
 
     it('should include bonus multipliers in offline calculation', () => {
@@ -215,8 +249,15 @@ describe('ResourceManager', () => {
       const timeAway = 60 * 1000; // 1 minute
       const result = resourceManager.calculateOfflineProgress(timeAway);
 
-      expect(result.gains.temporalEssence).toBeCloseTo(96); // 1 * 2 * 60 * 0.8
-      expect(result.details.temporalEssence.bonusMultiplier).toBe(2);
+      const expectedGain =
+        DEFAULT_GENERATION_RATES.temporalEssence *
+        60 *
+        (DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2) *
+        DEFAULT_OFFLINE_EFFICIENCY;
+      expect(result.gains.temporalEssence).toBeCloseTo(expectedGain);
+      expect(result.details.temporalEssence.bonusMultiplier).toBeCloseTo(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2
+      );
     });
 
     it('should apply offline progress to resources', () => {
@@ -226,8 +267,8 @@ describe('ResourceManager', () => {
       resourceManager.applyOfflineProgress(result);
       const state = resourceManager.getResourceState();
 
-      expect(state.temporalEssence).toBeCloseTo(48);
-      expect(state.mnemonicDust).toBeCloseTo(4.8);
+      expect(state.temporalEssence).toBeCloseTo(result.gains.temporalEssence!);
+      expect(state.mnemonicDust).toBeCloseTo(result.gains.mnemonicDust!);
     });
   });
 
@@ -235,16 +276,26 @@ describe('ResourceManager', () => {
     it('should simulate time passage correctly', () => {
       const gains = resourceManager.simulateTimePassage(60); // 60 seconds
 
-      expect(gains.temporalEssence).toBe(60); // 1 * 60
-      expect(gains.mnemonicDust).toBe(6); // 0.1 * 60
-      expect(gains.arcaneMana).toBe(3); // 0.05 * 60
+      expect(gains.temporalEssence).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.temporalEssence * DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 60
+      );
+      expect(gains.mnemonicDust).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.mnemonicDust * DEFAULT_BONUS_MULTIPLIERS.mnemonicDust * 60
+      );
+      expect(gains.arcaneMana).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.arcaneMana * DEFAULT_BONUS_MULTIPLIERS.arcaneMana * 60
+      );
     });
 
     it('should include bonuses in time simulation', () => {
       resourceManager.addGenerationBonus('temporalEssence', 2);
 
       const gains = resourceManager.simulateTimePassage(30);
-      expect(gains.temporalEssence).toBe(60); // 1 * 2 * 30
+      expect(gains.temporalEssence).toBeCloseTo(
+        DEFAULT_GENERATION_RATES.temporalEssence *
+          (DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2) *
+          30
+      );
     });
   });
 
@@ -283,7 +334,9 @@ describe('ResourceManager', () => {
       const restoredState = newManager.getResourceState();
       expect(restoredState.temporalEssence).toBe(100);
       expect(restoredState.mnemonicDust).toBe(50);
-      expect(restoredState.bonusMultipliers.temporalEssence).toBe(2);
+      expect(restoredState.bonusMultipliers.temporalEssence).toBeCloseTo(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2
+      );
     });
 
     it('should reset resources to default values', () => {
@@ -294,7 +347,9 @@ describe('ResourceManager', () => {
       const state = resourceManager.getResourceState();
 
       expect(state.temporalEssence).toBe(0);
-      expect(state.bonusMultipliers.temporalEssence).toBe(1);
+      expect(state.bonusMultipliers.temporalEssence).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence
+      );
     });
   });
 
@@ -342,12 +397,16 @@ describe('ResourceManager', () => {
 
       // Check that bonus is applied
       let state = resourceManager.getResourceState();
-      expect(state.bonusMultipliers.temporalEssence).toBe(2);
+      expect(state.bonusMultipliers.temporalEssence).toBeCloseTo(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 2
+      );
 
       // Check that bonus is removed after duration
       await new Promise<void>(resolve => setTimeout(resolve, 150));
       state = resourceManager.getResourceState();
-      expect(state.bonusMultipliers.temporalEssence).toBe(1);
+      expect(state.bonusMultipliers.temporalEssence).toBe(
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence
+      );
     });
   });
 

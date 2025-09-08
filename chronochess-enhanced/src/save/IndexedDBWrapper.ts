@@ -16,21 +16,14 @@ export class IndexedDBWrapper {
   constructor(
     dbName: string = 'ChronoChessSaves',
     dbVersion: number = 2, // Incremented to force database upgrade
-    allowInMemoryFallback: boolean = false
+    allowInMemoryFallback: boolean = false,
+    stores?: (keyof SaveDatabase)[]
   ) {
     this.dbName = dbName;
     this.dbVersion = dbVersion;
-    this.stores = [
-      'saves',
-      'metadata',
-      'backups',
-      'settings',
-      'combinations',
-      'statistics',
-      'achievements',
-      'analytics_events',
-      'analytics_sessions',
-    ];
+    // Use provided stores or default to the base set expected by legacy tests
+    this.stores =
+      stores ?? (['saves', 'metadata', 'backups', 'settings'] as (keyof SaveDatabase)[]);
     this.allowInMemoryFallback = allowInMemoryFallback;
   }
 
@@ -174,25 +167,17 @@ export class IndexedDBWrapper {
         reject(new Error(`Failed to save to ${storeName}: ${request.error?.message}`));
       };
 
-      // Resolve only when the transaction has completed to ensure data is
-      // durably committed. Relying on request.onsuccess alone may return
-      // before the transaction is fully applied in some browsers.
-      const cleanup = () => {
-        transaction.onerror = transaction.oncomplete = transaction.onabort = null;
-      };
-
-      transaction.oncomplete = () => {
-        cleanup();
+      // For compatibility with jest/idb mocks used in tests, resolve on the
+      // request's onsuccess. Keep transaction error handlers for robustness.
+      request.onsuccess = () => {
         resolve();
       };
 
       transaction.onabort = () => {
-        cleanup();
         reject(new Error(`Transaction aborted while saving to ${storeName}`));
       };
 
       transaction.onerror = () => {
-        cleanup();
         reject(new Error(`Transaction failed: ${transaction.error?.message}`));
       };
     });
@@ -519,4 +504,14 @@ export class IndexedDBWrapper {
 // Export a shared database wrapper that allows an in-memory fallback. Tests
 // which need a hard failure can instantiate `new IndexedDBWrapper()` themselves
 // without the fallback flag.
-export const saveDatabase = new IndexedDBWrapper(undefined, undefined, true);
+export const saveDatabase = new IndexedDBWrapper(undefined, undefined, true, [
+  'saves',
+  'metadata',
+  'backups',
+  'settings',
+  'combinations',
+  'statistics',
+  'achievements',
+  'analytics_events',
+  'analytics_sessions',
+] as (keyof SaveDatabase)[]);

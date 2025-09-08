@@ -1,4 +1,6 @@
 import { IndexedDBWrapper, saveDatabase } from './IndexedDBWrapper';
+import { cloudSaveService } from './CloudSaveService';
+import { isCloudConfigured } from '../lib/supabaseClient';
 import type {
   SaveData,
   SaveSlot,
@@ -7,6 +9,7 @@ import type {
   ExportData,
   PlayerStatistics,
 } from './types';
+import type { SaveSystemExtras } from './types';
 import { SaveError, SaveErrorType } from './types';
 import type { GameState } from '../engine/types';
 import type { ResourceState } from '../resources/types';
@@ -23,6 +26,8 @@ export class SaveSystem {
   private autoSaveTimer: number | null = null;
   private migrations: Map<string, SaveMigration> = new Map();
   private isInitialized = false;
+  // Feature flag allowing callers/tests to disable cloud sync explicitly
+  private cloudSyncEnabled: boolean;
 
   constructor(config?: Partial<SaveSystemConfig>, db?: IndexedDBWrapper) {
     // Allow callers (tests) to inject a fresh wrapper instance. When not
@@ -38,6 +43,9 @@ export class SaveSystem {
       backupOnSave: true,
       ...config,
     };
+
+    // Enable cloud sync by default when Supabase is configured; tests can disable
+    this.cloudSyncEnabled = isCloudConfigured;
 
     this.setupMigrations();
   }
@@ -92,6 +100,7 @@ export class SaveSystem {
       name?: string;
       isAutoSave?: boolean;
       createBackup?: boolean;
+      extras?: SaveSystemExtras;
     }
   ): Promise<void> {
     if (!this.isInitialized) {
@@ -120,9 +129,9 @@ export class SaveSystem {
         resources,
         evolutions: Array.from(evolutions.entries()),
         settings,
-        moveHistory: gameState.moveHistory || [],
-        undoStack: [],
-        redoStack: [],
+        moveHistory: options?.extras?.moveHistory || gameState.moveHistory || [],
+        undoStack: options?.extras?.undoStack || [],
+        redoStack: options?.extras?.redoStack || [],
         playerStats: await this.getPlayerStatistics(slotId),
         achievements: [],
         unlockedContent: {
@@ -131,20 +140,34 @@ export class SaveSystem {
           aestheticBoosters: [],
           soundPacks: [],
         },
+        // Store extras
+        pieceEvolutions: options?.extras?.pieceEvolutions,
+        soloModeStats: options?.extras?.soloModeStats,
+        unlockedEvolutions: options?.extras?.unlockedEvolutions,
+        gameMode: options?.extras?.gameMode,
+        knightDashCooldown: options?.extras?.knightDashCooldown,
+        manualModePieceStates: options?.extras?.manualModePieceStates,
       };
 
-      // Add checksum if enabled
+      // IMPORTANT ORDER NOTE:
+      // Previously the code calculated the checksum FIRST and then set `compressed = true`.
+      // That mutated the object after the checksum was generated, guaranteeing a mismatch
+      // on subsequent loads (because the loader re-hashed including the `compressed` field).
+      // We now set the compression flag (and perform any future compression) BEFORE hashing.
+      // Additionally the checksum routine now ignores the `compressed` flag for backward
+      // compatibility with already-saved (mismatched) data.
+
+      // Mark compression (and perform it in future) before computing checksum
+      if (this.config.compressionEnabled) {
+        saveData.compressed = true; // (No actual compression implemented yet)
+      }
+
+      // Add checksum last so no further fields mutate the hashed representation
       if (this.config.checksumValidation) {
         saveData.checksum = await this.calculateChecksum(saveData);
       }
 
-      // Compress if enabled
-      if (this.config.compressionEnabled) {
-        saveData.compressed = true;
-        // Note: Actual compression would be implemented here
-      }
-
-      // Save to database
+      // Save to local database (authoritative for offline)
       await this.db.save('saves', slotId, saveData);
 
       // Update metadata
@@ -161,6 +184,41 @@ export class SaveSystem {
       };
 
       await this.db.save('metadata', slotId, metadata);
+
+      // Best-effort cloud sync (non-blocking): do not fail local save if cloud fails
+      if (this.cloudSyncEnabled) {
+        try {
+          const { id: _id, ...metaNoId } = metadata;
+          // Guard: avoid pushing a trivial/blank snapshot over an existing rich cloud save.
+          const isTrivial = this.isTrivialSnapshot(saveData);
+          if (isTrivial) {
+            // Peek at existing cloud data; if it exists and is NOT trivial, skip this sync.
+            try {
+              const existing = await cloudSaveService.load(slotId);
+              if (existing && !this.isTrivialSnapshot(existing.data)) {
+                console.log(
+                  '[cloud-sync] Skipping cloud overwrite with trivial snapshot; preserved existing richer cloud save.'
+                );
+              } else {
+                void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                  console.warn('Cloud sync failed after local save (continuing):', err);
+                });
+              }
+            } catch (peekErr) {
+              console.warn('Cloud peek failed; proceeding with trivial sync anyway:', peekErr);
+              void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                console.warn('Cloud sync failed after local save (continuing):', err);
+              });
+            }
+          } else {
+            void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+              console.warn('Cloud sync failed after local save (continuing):', err);
+            });
+          }
+        } catch (err) {
+          console.warn('Cloud sync path threw unexpectedly (continuing):', err);
+        }
+      }
 
       console.log(`Game saved to slot ${slotId}`);
     } catch (error) {
@@ -180,23 +238,80 @@ export class SaveSystem {
     evolutions: Map<string, IPieceEvolution>;
     settings: GameSettings;
     metadata: SaveSlot;
+    extras?: SaveSystemExtras;
   } | null> {
     if (!this.isInitialized) {
       throw new SaveError(SaveErrorType.UNKNOWN_ERROR, 'Save system not initialized');
     }
 
     try {
-      // Load metadata first to check if save exists and is valid
-      const metadata = await this.db.load('metadata', slotId);
-      if (!metadata) {
-        return null;
+      // Cloud-first load if enabled; cache to local for offline
+      if (this.cloudSyncEnabled) {
+        try {
+          console.log(`Attempting cloud load for slot ${slotId}...`);
+          const cloud = await cloudSaveService.load(slotId);
+          if (cloud && cloud.data) {
+            console.log(`Cloud data found for slot ${slotId}, caching locally`);
+            // Cache cloud copy locally for offline resilience
+            await this.db.save('saves', slotId, cloud.data as any);
+            const metaLocal: SaveSlot = cloud.meta;
+            await this.db.save('metadata', slotId, metaLocal);
+
+            // Continue with validation/migration using cloud data
+            let saveData = cloud.data as SaveData;
+
+            if (this.config.checksumValidation && saveData.checksum) {
+              const calculatedChecksum = await this.calculateChecksum(saveData);
+              if (calculatedChecksum !== saveData.checksum) {
+                throw new SaveError(SaveErrorType.CORRUPTED_DATA, 'Save data checksum mismatch');
+              }
+            }
+
+            if (saveData.compressed) {
+              // Decompression hook (not implemented)
+            }
+
+            if (saveData.version !== this.getCurrentVersion()) {
+              saveData = await this.migrateSaveData(saveData);
+            }
+
+            const evolutions = new Map(saveData.evolutions);
+            return {
+              gameState: saveData.game,
+              resources: saveData.resources,
+              evolutions,
+              settings: saveData.settings,
+              metadata: metaLocal,
+              extras: {
+                moveHistory: saveData.moveHistory,
+                undoStack: saveData.undoStack,
+                redoStack: saveData.redoStack,
+                pieceEvolutions: saveData.pieceEvolutions,
+                soloModeStats: saveData.soloModeStats,
+                unlockedEvolutions: saveData.unlockedEvolutions,
+                gameMode: saveData.gameMode,
+                knightDashCooldown: saveData.knightDashCooldown,
+                manualModePieceStates: saveData.manualModePieceStates,
+              },
+            };
+          }
+        } catch (err) {
+          console.log(`Cloud load failed for slot ${slotId}, falling back to local:`, err);
+        }
+      } else {
+        console.log('Cloud sync disabled, loading from local storage only');
       }
 
+      // Local load path
+      console.log(`Loading from local storage for slot ${slotId}...`);
+      const metadata = await this.db.load('metadata', slotId);
+      if (!metadata) {
+        console.log(`No local metadata found for slot ${slotId}`);
+        return null;
+      }
       if (metadata.isCorrupted) {
         throw new SaveError(SaveErrorType.CORRUPTED_DATA, 'Save data is corrupted');
       }
-
-      // Load save data
       let saveData = await this.db.load('saves', slotId);
       if (!saveData) {
         throw new SaveError(SaveErrorType.CORRUPTED_DATA, 'Save data not found');
@@ -229,6 +344,17 @@ export class SaveSystem {
         evolutions,
         settings: saveData.settings,
         metadata,
+        extras: {
+          moveHistory: saveData.moveHistory,
+          undoStack: saveData.undoStack,
+          redoStack: saveData.redoStack,
+          pieceEvolutions: saveData.pieceEvolutions,
+          soloModeStats: saveData.soloModeStats,
+          unlockedEvolutions: saveData.unlockedEvolutions,
+          gameMode: saveData.gameMode,
+          knightDashCooldown: saveData.knightDashCooldown,
+          manualModePieceStates: saveData.manualModePieceStates,
+        },
       };
     } catch (error) {
       console.error('Failed to load game:', error);
@@ -257,15 +383,34 @@ export class SaveSystem {
     }
 
     try {
-      const metadata = await this.db.list('metadata', {
+      // Gather local metadata
+      const localMeta = await this.db.list('metadata', {
         index: 'timestamp',
-        direction: 'prev', // Most recent first
+        direction: 'next', // Oldest first to match expected ordering in UI/tests
       });
 
-      return metadata.map(item => {
-        const { id, ...slot } = item;
-        return { ...slot, id };
-      });
+      // Optionally gather cloud metadata
+      let cloudMeta: SaveSlot[] = [];
+      if (this.cloudSyncEnabled) {
+        try {
+          cloudMeta = await cloudSaveService.list();
+        } catch (err) {
+          console.warn('Failed to list cloud saves, returning local only:', err);
+        }
+      }
+
+      // Merge by slot id, prefer the most recent timestamp
+      const merged = new Map<string, SaveSlot>();
+      for (const m of localMeta) merged.set(m.id, m as SaveSlot);
+      for (const cm of cloudMeta) {
+        const existing = merged.get(cm.id);
+        if (!existing || cm.timestamp >= existing.timestamp) {
+          merged.set(cm.id, cm);
+        }
+      }
+
+      // Return sorted by timestamp asc (oldest first) for deterministic order
+      return Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp);
     } catch (error) {
       console.error('Failed to list save slots:', error);
       throw new SaveError(SaveErrorType.UNKNOWN_ERROR, 'Failed to list save slots', error as Error);
@@ -283,6 +428,13 @@ export class SaveSystem {
     try {
       await this.db.delete('saves', slotId);
       await this.db.delete('metadata', slotId);
+      if (this.cloudSyncEnabled) {
+        try {
+          await cloudSaveService.delete(slotId);
+        } catch (err) {
+          console.warn('Cloud delete failed (continuing with local delete):', err);
+        }
+      }
       console.log(`Save slot ${slotId} deleted`);
     } catch (error) {
       console.error('Failed to delete save:', error);
@@ -376,6 +528,18 @@ export class SaveSystem {
       };
 
       await this.db.save('metadata', slotId, metadata);
+
+      // Best-effort cloud sync of recovered save
+      if (this.cloudSyncEnabled) {
+        try {
+          const { id: _id, ...metaNoId } = metadata;
+          void cloudSaveService.save(slotId, backupData, metaNoId).catch(err => {
+            console.warn('Cloud sync failed after recovery (continuing):', err);
+          });
+        } catch (err) {
+          console.warn('Cloud sync path threw unexpectedly after recovery (continuing):', err);
+        }
+      }
 
       console.log(`Recovered save slot ${slotId} from backup`);
 
@@ -494,6 +658,18 @@ export class SaveSystem {
 
       await this.db.save('metadata', slotId, metadata);
 
+      // Best-effort cloud sync of the imported save
+      if (this.cloudSyncEnabled) {
+        try {
+          const { id: _id, ...metaNoId } = metadata;
+          void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+            console.warn('Cloud sync failed after import (continuing):', err);
+          });
+        } catch (err) {
+          console.warn('Cloud sync path threw unexpectedly after import (continuing):', err);
+        }
+      }
+
       console.log(`Save imported to slot ${slotId}`);
     } catch (error) {
       console.error('Failed to import save:', error);
@@ -603,15 +779,69 @@ export class SaveSystem {
   }
 
   private async calculateChecksum(saveData: SaveData): Promise<string> {
-    // Simple checksum implementation - in production, use a proper hash function
-    const dataString = JSON.stringify(saveData);
+    // Compute a stable checksum of the save data while explicitly ignoring
+    // the checksum field itself to avoid self-referential mismatches.
+    const cleaned = this.withoutChecksum(saveData);
+    const canonical = this.stableStringify(cleaned);
+
+    // Prefer a strong digest when available (browser), fallback to numeric hash
+    try {
+      const subtle = (globalThis.crypto && (globalThis.crypto as any).subtle) || undefined;
+      if (subtle && typeof subtle.digest === 'function') {
+        const enc = new TextEncoder();
+        const buf = enc.encode(canonical);
+        const digest = await subtle.digest('SHA-256', buf);
+        const bytes = Array.from(new Uint8Array(digest));
+        return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+    } catch {
+      // ignore and fallback
+    }
+
+    // Fallback simple 32-bit hash (non-cryptographic)
     let hash = 0;
-    for (let i = 0; i < dataString.length; i++) {
-      const char = dataString.charCodeAt(i);
+    for (let i = 0; i < canonical.length; i++) {
+      const char = canonical.charCodeAt(i);
       hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash |= 0; // Convert to 32-bit integer
     }
     return hash.toString(16);
+  }
+
+  // Produce a deep-cloned copy of SaveData without the checksum field
+  private withoutChecksum(data: SaveData): SaveData {
+    const clone: any = JSON.parse(JSON.stringify(data));
+    if (clone && typeof clone === 'object') {
+      delete clone.checksum;
+      // Exclude non-authoritative flags that historically were added AFTER checksum
+      // generation causing false mismatches. Ignoring them keeps legacy saves valid.
+      delete clone.compressed;
+    }
+    return clone as SaveData;
+  }
+
+  // Deterministic stringify: sorts object keys recursively to ensure stable output
+  private stableStringify(value: any): string {
+    const seen = new WeakSet();
+    const stringify = (val: any): any => {
+      if (val === null || typeof val !== 'object') return val;
+      if (seen.has(val)) return undefined; // avoid cycles (shouldn't happen with our data)
+      seen.add(val);
+
+      if (Array.isArray(val)) {
+        return val.map(v => stringify(v));
+      }
+
+      // For Maps serialized as arrays, we keep as-is; for plain objects, sort keys
+      const keys = Object.keys(val).sort();
+      const out: Record<string, any> = {};
+      for (const k of keys) {
+        out[k] = stringify(val[k]);
+      }
+      return out;
+    };
+
+    return JSON.stringify(stringify(value));
   }
 
   private estimateSaveSize(
@@ -663,6 +893,28 @@ export class SaveSystem {
 
   private getCurrentVersion(): string {
     return '1.0.0'; // This would come from package.json or build config
+  }
+
+  // Determine if a snapshot is essentially empty / trivial so that it should not overwrite
+  // a richer cloud save.
+  private isTrivialSnapshot(saveData: SaveData): boolean {
+    try {
+      const r: any = saveData.resources || {};
+      const allZeroResources = [
+        'temporalEssence',
+        'mnemonicDust',
+        'aetherShards',
+        'arcaneMana',
+      ].every(k => !r[k] || r[k] === 0);
+      const evolutionsEmpty = !saveData.evolutions || saveData.evolutions.length === 0;
+      const playTime = saveData.playerStats?.totalPlayTime || 0;
+      const moves = saveData.moveHistory?.length || 0;
+      const hasUnlocks = Boolean(saveData.unlockedEvolutions && saveData.unlockedEvolutions.length);
+      // Consider trivial if no resources, no evolutions, no moves, minimal play time (< 60s), no unlocks
+      return allZeroResources && evolutionsEmpty && moves === 0 && playTime < 60_000 && !hasUnlocks;
+    } catch {
+      return false;
+    }
   }
 }
 

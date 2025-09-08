@@ -171,8 +171,64 @@
 
 /* Clean header design */
 .menu-scene__header {
+  text-align: center;
+  margin-bottom: var(--spacing-8);
+  z-index: 2;
+  position: relative;
+}
+
+.menu-scene__header-top {
+  display: flex;
+  justify-content: flex-end;
   margin-bottom: var(--spacing-6);
-  animation: headerSlideIn var(--duration-normal) var(--ease-out) 0.2s both;
+  min-height: 40px;
+}
+
+.menu-scene__user-status,
+.menu-scene__auth-prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.menu-scene__user-welcome {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.menu-scene__user-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.menu-scene__user-level,
+.menu-scene__user-xp {
+  padding: var(--spacing-1) var(--spacing-2);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--accent-primary);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.menu-scene__profile-button,
+.menu-scene__auth-button {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-normal) var(--ease-out);
+}
+
+.menu-scene__profile-button:hover,
+.menu-scene__auth-button:hover {
+  background: var(--bg-glass-strong);
+  transform: translateY(-1px);
 }
 
 @keyframes headerSlideIn {
@@ -764,6 +820,48 @@
     transform: none;
   }
 
+  /* Guest data recovery section */
+  .menu-scene__data-recovery {
+    margin-top: var(--spacing-4);
+    padding: var(--spacing-4);
+    background: var(--bg-glass);
+    border: 1px solid var(--border-warning);
+    border-radius: var(--radius-md);
+    text-align: center;
+    animation: recoverySlideIn var(--duration-normal) var(--ease-out);
+  }
+
+  .menu-scene__recovery-text {
+    margin: 0 0 var(--spacing-3) 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+  }
+
+  .menu-scene__recovery-actions {
+    display: flex;
+    gap: var(--spacing-2);
+    justify-content: center;
+  }
+
+  .menu-scene__recovery-button {
+    font-size: var(--font-size-xs);
+  }
+
+  .menu-scene__recovery-dismiss {
+    font-size: var(--font-size-xs);
+  }
+
+  @keyframes recoverySlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
   .menu-scene__stat:hover {
     transform: none;
   }

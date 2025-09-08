@@ -408,4 +408,19 @@ export class ResourceManager {
 
     return gains;
   }
+
+  /**
+   * Fast-forward active generation as if the specified number of seconds elapsed continuously.
+   * Unlike calculateOfflineProgress (which applies an efficiency penalty), this method applies
+   * 100% of the normal generation (respecting current multipliers) and advances the internal
+   * lastUpdateTime clock so the regular loop won't double-count the elapsed time.
+   */
+  fastForward(seconds: number): ResourceGains {
+    if (seconds <= 0) return {};
+    const gains = this.simulateTimePassage(seconds);
+    this.awardResources(gains);
+    // Prevent the next real-time tick from also including this duration
+    this.lastUpdateTime = Date.now();
+    return gains;
+  }
 }

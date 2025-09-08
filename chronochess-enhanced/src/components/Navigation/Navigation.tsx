@@ -67,11 +67,14 @@ const Navigation: React.FC<NavigationProps> = ({
 
   // Scene hierarchy for breadcrumbs
   const sceneHierarchy: Record<SceneType, SceneType[]> = {
-    menu: [],
+    landing: [],
+    auth: ['landing'],
+    menu: ['landing'],
     soloMode: ['menu'],
     evolution: ['menu'],
     achievements: ['menu'],
     settings: ['menu'],
+    profile: ['menu'],
   };
 
   const handleNavigation = (targetScene: SceneType) => {

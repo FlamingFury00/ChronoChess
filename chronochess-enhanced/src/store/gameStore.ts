@@ -8,6 +8,8 @@ import type { ResourceState } from '../resources/types';
 import type { IPieceEvolution } from '../evolution/types';
 
 import { ResourceManager } from '../resources/ResourceManager';
+import { isCloudConfigured } from '../lib/supabaseClient';
+import { persistAll, restoreAll } from './saveAdapter';
 import { BASE_REWARD_FACTOR } from '../resources/premiumConfig';
 import {
   BASE_MANA_RATE,
@@ -135,6 +137,9 @@ interface GameStore extends AppState {
   deserialize: (saveData: SaveData) => boolean;
   saveToStorage: (key?: string) => void;
   loadFromStorage: (key?: string) => boolean;
+  // Cloud save/load (async, no breaking changes to existing API)
+  saveToCloudFirst: () => Promise<boolean>;
+  loadFromCloudFirst: () => Promise<boolean>;
 
   // Auto-save functionality
   enableAutoSave: (interval?: number) => void;
@@ -147,6 +152,7 @@ interface GameStore extends AppState {
   awardResources: (gains: any) => void;
   startResourceGeneration: () => void;
   stopResourceGeneration: () => void;
+  fastForwardResourceGeneration: (seconds: number) => void;
 
   // Evolution actions
   addEvolution: (key: string, evolution: IPieceEvolution) => void;
@@ -259,7 +265,7 @@ const initialResourceState: ResourceState = {
 
 const initialUIState: UIState = {
   selectedSquare: null,
-  currentScene: 'menu',
+  currentScene: 'landing',
   isLoading: false,
 };
 
@@ -906,35 +912,44 @@ export const useGameStore = create<GameStore>()(
             return;
           }
 
-          const saveData = state.serialize();
+          const data = state.serialize();
+          // Use SaveSystem via adapter to persist everything (local + cloud sync inside)
+          void persistAll(key, state.game, state.resources, state.evolutions, state.settings, {
+            moveHistory: data.moveHistory,
+            undoStack: data.undoStack,
+            redoStack: data.redoStack,
+            pieceEvolutions: data.pieceEvolutions,
+            soloModeStats: data.soloModeStats,
+            unlockedEvolutions: data.unlockedEvolutions,
+            gameMode: data.gameMode,
+            knightDashCooldown: data.knightDashCooldown,
+            manualModePieceStates: data.manualModePieceStates,
+          }).catch(err => console.warn('persistAll failed:', err));
 
-          // Defensive: localStorage may not be available in some test or server
-          // environments. Guard against ReferenceError and silently skip saving
-          // when it's not present so background timers don't cause test failures.
-          if (typeof localStorage === 'undefined' || localStorage === null) {
-            console.warn(
-              'localStorage is not available in this environment; skipping saveToStorage'
-            );
-            return;
+          // Also cache to localStorage for compatibility with existing tests and fast resume
+          try {
+            if (typeof localStorage !== 'undefined' && localStorage !== null) {
+              localStorage.setItem(key, JSON.stringify(data));
+              console.log('💾 Cached save to localStorage (compat cache)');
+              // Maintain a rolling backup copy to help guest recovery if the primary save becomes corrupt
+              try {
+                localStorage.setItem(`${key}_backup`, JSON.stringify(data));
+              } catch (backupErr) {
+                console.warn('Backup save write failed (non-fatal):', backupErr);
+              }
+            }
+          } catch (err) {
+            console.warn('localStorage cache failed (non-fatal):', err);
           }
 
-          localStorage.setItem(key, JSON.stringify(saveData));
-          console.log('💾 Save data written to localStorage:', {
-            version: saveData.version,
-            timestamp: new Date(saveData.timestamp).toLocaleString(),
-            resources: saveData.resources,
-            pieceEvolutions: saveData.pieceEvolutions,
-            unlockedEvolutions: saveData.unlockedEvolutions?.length || 0,
-            gameMode: saveData.gameMode,
-            soloModeStats: saveData.soloModeStats,
-            moveHistoryLength: saveData.moveHistory.length,
-            knightDashCooldown: saveData.knightDashCooldown,
-            manualModePieceStates: Object.keys(saveData.manualModePieceStates || {}).length,
-          });
-          console.log('✨ All game progress and evolution unlocks preserved!');
+          console.log('💾 Save queued to SaveSystem (with cloud sync if configured).');
           try {
-            showToast('Game saved successfully.', { level: 'info' });
-          } catch (err) {}
+            // Only show toast when game systems are active (not on landing/auth pages)
+            const currentScene = state.ui.currentScene;
+            if (currentScene !== 'landing' && currentScene !== 'auth') {
+              showToast('Game saved.', { level: 'info' });
+            }
+          } catch {}
         } catch (error) {
           console.error('❌ Failed to save to storage:', error);
           throw error;
@@ -943,7 +958,9 @@ export const useGameStore = create<GameStore>()(
 
       loadFromStorage: (key = DEFAULT_SAVE_KEY): boolean => {
         try {
-          // Defensive: localStorage may not exist in some environments (node/jest).
+          console.log(`📎 Loading from localStorage with key: ${key}`);
+
+          // Legacy/local cache path (synchronous) for tests and quick startup
           if (typeof localStorage === 'undefined' || localStorage === null) {
             console.warn(
               'localStorage is not available in this environment; loadFromStorage skipped'
@@ -953,32 +970,214 @@ export const useGameStore = create<GameStore>()(
 
           const savedData = localStorage.getItem(key);
           if (!savedData) {
-            console.log('📎 No save data found in localStorage');
+            console.log(
+              '📎 No save data found in localStorage (fresh start or guest without previous data)'
+            );
+            // Attempt fallback to backup save before giving up
+            try {
+              const backup = localStorage.getItem(`${key}_backup`);
+              if (backup) {
+                console.log('🛟 Attempting recovery from backup save...');
+                try {
+                  const parsedBackup = JSON.parse(backup);
+                  const ok = get().deserialize(parsedBackup as any);
+                  if (ok) {
+                    console.log('✅ Recovered progress from backup save');
+                    try {
+                      showToast('Recovered progress from backup save.', { level: 'info' });
+                    } catch {}
+                    setTimeout(() => get().startResourceGeneration(), 100);
+                    return true;
+                  }
+                } catch (backupParseErr) {
+                  console.warn('Failed to use backup save:', backupParseErr);
+                }
+              }
+            } catch (backupErr) {
+              console.warn('Backup recovery attempt failed:', backupErr);
+            }
             return false;
           }
 
-          const saveData: SaveData = JSON.parse(savedData);
-          console.log('💾 Loading save data:', {
-            version: saveData.version,
-            timestamp: new Date(saveData.timestamp).toLocaleString(),
-            resources: saveData.resources,
-            pieceEvolutions: saveData.pieceEvolutions,
-            unlockedEvolutions: saveData.unlockedEvolutions?.length || 0,
-            gameMode: saveData.gameMode,
-            soloModeStats: saveData.soloModeStats,
+          let parsed: SaveData;
+          try {
+            parsed = JSON.parse(savedData);
+          } catch (err) {
+            console.warn('Failed to parse localStorage save JSON:', err);
+            return false;
+          }
+
+          console.log('💾 Loading save data (local cache):', {
+            version: parsed.version,
+            timestamp: new Date(parsed.timestamp).toLocaleString(),
+            resources: parsed.resources,
+            pieceEvolutions: (parsed as any).pieceEvolutions,
+            unlockedEvolutions: (parsed as any).unlockedEvolutions?.length || 0,
+            gameMode: (parsed as any).gameMode,
+            soloModeStats: (parsed as any).soloModeStats,
           });
 
-          const success = get().deserialize(saveData);
-          if (success) {
-            console.log('✅ Save data loaded successfully');
-            // Restart resource generation after loading
-            setTimeout(() => {
-              get().startResourceGeneration();
-            }, 100);
+          const ok = get().deserialize(parsed as any);
+          if (ok) {
+            console.log('✅ Save data loaded successfully from localStorage');
+            // Show appropriate toast based on data source
+            try {
+              showToast('Progress restored from local storage.', { level: 'info' });
+            } catch {}
+            setTimeout(() => get().startResourceGeneration(), 100);
+          } else {
+            console.warn('Failed to deserialize save data');
+            // Last-chance attempt: try backup if main deserialize failed
+            try {
+              const backup = localStorage.getItem(`${key}_backup`);
+              if (backup) {
+                console.log(
+                  '🛟 Attempting secondary recovery from backup after deserialize failure...'
+                );
+                const parsedBackup = JSON.parse(backup);
+                const ok2 = get().deserialize(parsedBackup as any);
+                if (ok2) {
+                  console.log(
+                    '✅ Recovered progress from backup after primary deserialize failure'
+                  );
+                  try {
+                    showToast('Recovered progress from backup.', { level: 'info' });
+                  } catch {}
+                  setTimeout(() => get().startResourceGeneration(), 100);
+                  return true;
+                }
+              }
+            } catch (secondaryBackupErr) {
+              console.warn('Secondary backup recovery failed:', secondaryBackupErr);
+            }
           }
-          return success;
+          return ok;
         } catch (error) {
           console.error('❌ Failed to load from storage:', error);
+          // Try a final recovery path leveraging guestDataManager (if guest context)
+          try {
+            const { recoverGuestData } = require('../lib/guestDataManager');
+            recoverGuestData()
+              .then((r: any) => {
+                if (r && r.recovered) {
+                  console.log('✅ Guest data manager recovered some progress sources:', r.sources);
+                }
+              })
+              .catch((err: any) =>
+                console.warn('Guest data manager recovery attempt failed:', err)
+              );
+          } catch (gdErr) {
+            console.warn('Guest data manager not available for recovery:', gdErr);
+          }
+          return false;
+        }
+      },
+
+      // Cloud helpers
+      saveToCloudFirst: async () => {
+        try {
+          if (!isCloudConfigured) return false;
+          const state = get();
+          if (state.isManualGameActive || state.autoBattleSystem) {
+            set({ pendingSaveOnMatchEnd: true });
+            return false;
+          }
+          const data = state.serialize();
+          await persistAll(
+            DEFAULT_SAVE_KEY,
+            state.game,
+            state.resources,
+            state.evolutions,
+            state.settings,
+            {
+              moveHistory: data.moveHistory,
+              undoStack: data.undoStack,
+              redoStack: data.redoStack,
+              pieceEvolutions: data.pieceEvolutions,
+              soloModeStats: data.soloModeStats,
+              unlockedEvolutions: data.unlockedEvolutions,
+              gameMode: data.gameMode,
+              knightDashCooldown: data.knightDashCooldown,
+              manualModePieceStates: data.manualModePieceStates,
+            }
+          );
+          try {
+            // Only show toast when game systems are active (not on landing/auth pages)
+            const state = get();
+            const currentScene = state.ui.currentScene;
+            if (currentScene !== 'landing' && currentScene !== 'auth') {
+              showToast('Saved to cloud.', { level: 'success' });
+            }
+          } catch {}
+          return true;
+        } catch (err) {
+          console.warn('saveToCloudFirst failed:', err);
+          return false;
+        }
+      },
+
+      loadFromCloudFirst: async () => {
+        try {
+          if (!isCloudConfigured) {
+            console.log('Cloud not configured, skipping cloud load');
+            return false;
+          }
+
+          // Check if user is authenticated first - skip cloud for guests
+          try {
+            const { getCurrentUser } = await import('../lib/supabaseAuth');
+            const user = await getCurrentUser();
+            if (!user) {
+              console.log('Guest user detected, skipping cloud load and using local storage');
+              return false;
+            }
+          } catch (err) {
+            console.log('Auth check failed, skipping cloud load:', err);
+            return false;
+          }
+
+          const out = await restoreAll(DEFAULT_SAVE_KEY);
+          if (!out) return false;
+          const { gameState, resources, evolutions, settings, extras } = out;
+          const serialized = {
+            version: '1.0.0',
+            timestamp: Date.now(),
+            game: gameState,
+            resources,
+            evolutions: Array.from(evolutions.entries()),
+            pieceEvolutions: extras?.pieceEvolutions || get().pieceEvolutions,
+            settings,
+            moveHistory: extras?.moveHistory || [],
+            undoStack: extras?.undoStack || [],
+            redoStack: extras?.redoStack || [],
+            soloModeStats: extras?.soloModeStats,
+            unlockedEvolutions: extras?.unlockedEvolutions,
+            gameMode: extras?.gameMode,
+            knightDashCooldown: extras?.knightDashCooldown,
+            manualModePieceStates: extras?.manualModePieceStates,
+          } as any;
+          const ok = get().deserialize(serialized);
+          if (ok) {
+            try {
+              // Determine message based on user authentication status
+              // If user is authenticated, data likely came from cloud (or cloud-synced local cache)
+              // If user is not authenticated (guest), data came from local storage only
+              const { getCurrentUser } = await import('../lib/supabaseAuth');
+              const user = await getCurrentUser();
+              if (user) {
+                showToast('Loaded from cloud.', { level: 'info' });
+              } else {
+                showToast('Loaded from local storage.', { level: 'info' });
+              }
+            } catch {
+              // If auth check fails, assume local storage
+              showToast('Loaded from local storage.', { level: 'info' });
+            }
+            setTimeout(() => get().startResourceGeneration(), 100);
+          }
+          return ok;
+        } catch (err) {
+          console.warn('loadFromCloudFirst failed:', err);
           return false;
         }
       },
@@ -1116,6 +1315,18 @@ export const useGameStore = create<GameStore>()(
         if ((globalThis as any).resourceUpdateInterval) {
           clearInterval((globalThis as any).resourceUpdateInterval);
           (globalThis as any).resourceUpdateInterval = null;
+        }
+      },
+
+      fastForwardResourceGeneration: (seconds: number) => {
+        try {
+          const gains = resourceManager.fastForward(seconds);
+          if (Object.keys(gains).length) {
+            // Route through updateResources to ensure achievements / sync
+            get().updateResources(resourceManager.getResourceState());
+          }
+        } catch (err) {
+          console.warn('fastForwardResourceGeneration failed:', err);
         }
       },
 

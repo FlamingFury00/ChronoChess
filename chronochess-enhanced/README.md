@@ -52,6 +52,17 @@ npm run dev
 
 4. Open your browser and navigate to `http://localhost:5173`
 
+### Cloud Saves (Supabase)
+
+Optionally enable cross-device cloud saves using Supabase Postgres:
+
+1. Create a Supabase project and enable Anonymous sign-ins in Auth settings
+2. Run the SQL in `supabase/schema.sql` on your project (SQL Editor)
+3. Copy `.env.example` to `.env.local` and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+4. Restart dev server. The game will save to cloud first and keep a local fallback
+
+If environment variables are not set, the game will operate fully offline, storing saves locally.
+
 ### Development Scripts
 
 - `npm run dev` - Start development server

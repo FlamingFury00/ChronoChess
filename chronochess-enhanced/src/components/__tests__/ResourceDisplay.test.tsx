@@ -69,10 +69,10 @@ describe('ResourceDisplay Component', () => {
     expect(resourceDisplay).toHaveClass('resource-display--compact');
   });
 
-  it('shows multipliers when they exist', () => {
-    render(<ResourceDisplay />);
+  it('shows multipliers when they exist (non-compact mode)', () => {
+    render(<ResourceDisplay compact={false} />);
 
-    // Should show multipliers > 1
+    // Multipliers are only rendered when not in compact mode
     expect(screen.getByText('×1.5')).toBeInTheDocument(); // temporalEssence multiplier
     expect(screen.getByText('×2.0')).toBeInTheDocument(); // arcaneMana multiplier
   });
