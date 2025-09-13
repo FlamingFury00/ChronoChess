@@ -79,6 +79,15 @@ export class ChessEngine {
         };
       }
 
+      // Universal rule: cannot capture a king (applies to both standard and enhanced moves)
+      try {
+        const targetAtTo = this.chess.get(to as any);
+        if (targetAtTo && targetAtTo.type === 'k') {
+          console.log(`❌ Illegal move detected: attempt to capture king at ${to}`);
+          return { success: false, error: 'Illegal move: cannot capture the king' };
+        }
+      } catch {}
+
       // **ENHANCED: Check if this is an enhanced move from abilities**
       const isEnhancedMove = this.isEnhancedMove(from, to);
       console.log(`🔍 Is enhanced move: ${isEnhancedMove}`);
@@ -241,13 +250,23 @@ export class ChessEngine {
       console.warn('🔍 getLegalMoves diagnostic logging failed:', err);
     }
 
-    const enhancedMoves = (moves as any[]).map(move => ({
-      from: move.from,
-      to: move.to,
-      promotion: move.promotion as PieceType,
-      san: move.san,
-      flags: move.flags,
-    }));
+    const enhancedMoves = (moves as any[])
+      .filter(move => {
+        // Do not allow listing a destination that currently contains a king
+        try {
+          const target = this.chess.get(move.to as any);
+          return !(target && target.type === 'k');
+        } catch {
+          return true;
+        }
+      })
+      .map(move => ({
+        from: move.from,
+        to: move.to,
+        promotion: move.promotion as PieceType,
+        san: move.san,
+        flags: move.flags,
+      }));
 
     // Apply piece evolution modifications
     return this.applyEvolutionToMoves(enhancedMoves, square);
@@ -262,6 +281,14 @@ export class ChessEngine {
   makeMoveFromNotation(notation: string): MoveResult {
     try {
       const chessMove = this.chess.move(notation);
+
+      // Guard: if the SAN move captured a king (shouldn't happen in chess.js), undo and reject
+      try {
+        if ((chessMove as any)?.captured === 'k') {
+          this.chess.undo();
+          return { success: false, error: 'Illegal move: cannot capture the king' };
+        }
+      } catch {}
 
       const enhancedMove: Move = {
         from: chessMove.from,
@@ -534,6 +561,13 @@ export class ChessEngine {
     const piece = this.chess.get(from as any);
     if (!piece) {
       console.log(`❌ No piece found at ${from}`);
+      return false;
+    }
+
+    // Absolute rule: you cannot capture a king in chess; checkmate ends the game instead.
+    const targetAtTo = this.chess.get(to as any);
+    if (targetAtTo && targetAtTo.type === 'k') {
+      console.log(`❌ Illegal enhanced move: cannot capture the king at ${to}`);
       return false;
     }
 
@@ -1010,38 +1044,9 @@ export class ChessEngine {
       const capturedPiece = this.chess.get(to as any);
       if (capturedPiece) {
         console.log(`🔧 Will capture: ${capturedPiece.color} ${capturedPiece.type} at ${to}`);
-        // If the captured piece is a king, end the game and set the winner, then return early to avoid FEN errors
+        // Disallow king capture entirely for enhanced moves
         if (capturedPiece.type === 'k') {
-          console.log('👑 King captured! Ending game.');
-          // Set a custom game over state
-          (this as any)._enhancedGameOver = true;
-          (this as any)._enhancedWinner = capturedPiece.color === 'w' ? 'b' : 'w';
-          // Notify game store if available
-          const gameStore = (globalThis as any).chronoChessStore;
-          if (gameStore) {
-            const newGameState = this.getGameState();
-            gameStore.set({
-              game: {
-                ...newGameState,
-                gameOver: true,
-                winner: (this as any)._enhancedWinner,
-                kingCaptured: true,
-              },
-            });
-            if (gameStore.updateGameState) {
-              gameStore.updateGameState({
-                fen: this.chess.fen(),
-                lastMove: { from, to },
-                isEnhancedMove: true,
-                turn: this.chess.turn(),
-                gameOver: true,
-                winner: (this as any)._enhancedWinner,
-                kingCaptured: true,
-              });
-            }
-          }
-          // Return early to avoid updating the board and generating an invalid FEN
-          return;
+          throw new Error('Illegal move: cannot capture the king');
         }
       }
 
@@ -4201,7 +4206,10 @@ export class ChessEngine {
     // Check if the destination square is valid
     const targetPiece = this.chess.get(square as any);
 
-    // Can move to empty squares or capture enemy pieces
+    // Cannot move onto a king square ever; only check/checkmate ends the game.
+    if (targetPiece && targetPiece.type === 'k') return false;
+
+    // Can move to empty squares or capture enemy pieces (non-king)
     return !targetPiece || targetPiece.color !== pieceColor;
   }
 
