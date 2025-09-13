@@ -88,9 +88,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
           try {
             const importedSettings = JSON.parse(e.target?.result as string);
             updateSettings(importedSettings);
+            showToast('Settings imported successfully.', { level: 'success' });
           } catch (error) {
             console.error('Failed to import settings:', error);
-            const { showToast } = useToast();
             showToast('Failed to import settings. Please check the file format.', {
               level: 'error',
             });
@@ -223,9 +223,39 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
               <div className="settings-panel__audio-test">
                 <h5>Audio Test</h5>
                 <Button
-                  onClick={() => {
-                    // Mock audio test - in real implementation, this would play test sounds
-                    console.log('Playing audio test...');
+                  onClick={async () => {
+                    try {
+                      // Prefer rich audioManager path if available
+                      const audio = await import('../../audio');
+                      try {
+                        await audio.audioManager.initialize();
+                      } catch {}
+                      if (settings.musicEnabled) {
+                        try {
+                          await audio.ambientSoundscapeSystem.startSoundscape({
+                            mood: 'mystical',
+                            intensity: 0.4,
+                            layers: ['base'],
+                            crossfadeTime: 0.5,
+                            spatialEnabled: false,
+                          });
+                        } catch {}
+                      }
+                      if (settings.soundEnabled) {
+                        try {
+                          await audio.audioFeedbackSystem.playComboFeedback(3, 'move_streak');
+                        } catch {}
+                      }
+                      showToast('Audio test played.', { level: 'info' });
+                    } catch (err) {
+                      try {
+                        // Fallback to simple sound player
+                        const { simpleSoundPlayer } = await import('../../audio/SimpleSoundPlayer');
+                        simpleSoundPlayer.initialize();
+                        simpleSoundPlayer.playSound('move');
+                        showToast('Audio test (basic) played.', { level: 'info' });
+                      } catch {}
+                    }
                   }}
                   variant="secondary"
                   size="small"
@@ -245,9 +275,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                   <label className="settings-panel__setting-label">
                     <input
                       type="checkbox"
-                      onChange={e => {
-                        document.body.classList.toggle('high-contrast', e.target.checked);
-                      }}
+                      checked={!!settings.highContrast}
+                      onChange={() => handleToggleSetting('highContrast')}
                       className="settings-panel__checkbox"
                     />
                     <span className="settings-panel__checkbox-custom"></span>
@@ -262,9 +291,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                   <label className="settings-panel__setting-label">
                     <input
                       type="checkbox"
-                      onChange={e => {
-                        document.body.classList.toggle('reduced-motion', e.target.checked);
-                      }}
+                      checked={!!settings.reducedMotion}
+                      onChange={() => handleToggleSetting('reducedMotion')}
                       className="settings-panel__checkbox"
                     />
                     <span className="settings-panel__checkbox-custom"></span>
@@ -279,9 +307,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                   <label className="settings-panel__setting-label">
                     <input
                       type="checkbox"
-                      onChange={e => {
-                        document.body.classList.toggle('large-text', e.target.checked);
-                      }}
+                      checked={!!settings.largeText}
+                      onChange={() => handleToggleSetting('largeText')}
                       className="settings-panel__checkbox"
                     />
                     <span className="settings-panel__checkbox-custom"></span>
@@ -300,9 +327,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                   <label className="settings-panel__setting-label">
                     <input
                       type="checkbox"
-                      onChange={e => {
-                        document.body.classList.toggle('sticky-hover', e.target.checked);
-                      }}
+                      checked={!!settings.stickyHover}
+                      onChange={() => handleToggleSetting('stickyHover')}
                       className="settings-panel__checkbox"
                     />
                     <span className="settings-panel__checkbox-custom"></span>
@@ -317,9 +343,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
                   <label className="settings-panel__setting-label">
                     <input
                       type="checkbox"
-                      onChange={e => {
-                        document.body.classList.toggle('focus-visible', e.target.checked);
-                      }}
+                      checked={!!settings.focusVisible}
+                      onChange={() => handleToggleSetting('focusVisible')}
                       className="settings-panel__checkbox"
                     />
                     <span className="settings-panel__checkbox-custom"></span>
@@ -336,7 +361,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
 
                 <div className="settings-panel__setting">
                   <label className="settings-panel__setting-label">
-                    <input type="checkbox" className="settings-panel__checkbox" />
+                    <input
+                      type="checkbox"
+                      checked={!!settings.simplifiedInterface}
+                      onChange={() => handleToggleSetting('simplifiedInterface')}
+                      className="settings-panel__checkbox"
+                    />
                     <span className="settings-panel__checkbox-custom"></span>
                     Simplified Interface
                   </label>
@@ -347,7 +377,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ className = '' }) => {
 
                 <div className="settings-panel__setting">
                   <label className="settings-panel__setting-label">
-                    <input type="checkbox" className="settings-panel__checkbox" />
+                    <input
+                      type="checkbox"
+                      checked={!!settings.extendedTimeouts}
+                      onChange={() => handleToggleSetting('extendedTimeouts')}
+                      className="settings-panel__checkbox"
+                    />
                     <span className="settings-panel__checkbox-custom"></span>
                     Extended Timeouts
                   </label>

@@ -2,9 +2,57 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
+    <!-- Theme color for browser UI in dark/light -->
+    <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
+    <title>ChronoChess</title>
+    <script>
+      (function() {
+        var DARK_ICON = '/favicon-dark.svg';
+        var LIGHT_ICON = '/favicon-light.svg';
+
+        function resolveTheme() {
+          var attr = document.documentElement.getAttribute('data-theme');
+          if (attr === 'light') return 'light';
+          if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) return 'light';
+          return 'dark';
+        }
+
+        function setFavicon() {
+          var theme = resolveTheme();
+          var desired = theme === 'light' ? LIGHT_ICON : DARK_ICON;
+          var link = document.querySelector('link[rel="icon"]');
+          if (!link) {
+            link = document.createElement('link');
+            link.setAttribute('rel', 'icon');
+            link.setAttribute('type', 'image/svg+xml');
+            document.head.appendChild(link);
+          }
+          var href = desired + '?v=' + Date.now(); // cache-bust to force refresh
+          // Replace node to force some browsers to reload immediately
+          var clone = link.cloneNode(true);
+          clone.setAttribute('href', href);
+          document.head.removeChild(link);
+          document.head.appendChild(clone);
+        }
+
+        // Initial set
+        setFavicon();
+
+        // Observe theme attribute changes
+        var obs = new MutationObserver(function(m) { setFavicon(); });
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+        // Listen to OS theme changes if no explicit theme
+        if (window.matchMedia) {
+          var mql = window.matchMedia('(prefers-color-scheme: light)');
+          if (mql.addEventListener) mql.addEventListener('change', setFavicon);
+          else if (mql.addListener) mql.addListener(setFavicon);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

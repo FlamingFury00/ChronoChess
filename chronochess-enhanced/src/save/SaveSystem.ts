@@ -1421,20 +1421,8 @@ export class SaveSystem {
         claimedFlags = {};
       }
 
-      // Optionally load definitions to enrich minimal records
-      let defsById: Map<string, any> | null = null;
-      try {
-        // Importing the tracker to access definitions is safe without initialization
-        // (the method reads static definitions only)
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { progressTracker } = require('./ProgressTracker');
-        if (progressTracker && typeof progressTracker.getAllAchievementDefinitions === 'function') {
-          const defs = progressTracker.getAllAchievementDefinitions();
-          defsById = new Map(defs.map((d: any) => [d.id, d]));
-        }
-      } catch {
-        defsById = null;
-      }
+      // We deliberately avoid importing ProgressTracker here (synchronous path);
+      // if enrichment is needed, it will be handled by ProgressTracker later.
 
       const merged = new Map<string, any>();
 
@@ -1468,25 +1456,16 @@ export class SaveSystem {
           if (ts) existing.unlockedTimestamp = ts;
           merged.set(entry.id, existing);
         } else {
-          const def = defsById?.get(entry.id);
-          if (def) {
-            merged.set(entry.id, {
-              ...def,
-              unlockedTimestamp: ts || Date.now(),
-              claimed,
-            });
-          } else {
-            merged.set(entry.id, {
-              id: entry.id,
-              name: entry.id,
-              description: '',
-              category: 'special',
-              rarity: 'common',
-              reward: {},
-              unlockedTimestamp: ts || Date.now(),
-              claimed,
-            });
-          }
+          merged.set(entry.id, {
+            id: entry.id,
+            name: entry.id,
+            description: '',
+            category: 'special',
+            rarity: 'common',
+            reward: {},
+            unlockedTimestamp: ts || Date.now(),
+            claimed,
+          });
         }
       }
 
@@ -1498,22 +1477,16 @@ export class SaveSystem {
           existing.claimed = true;
           merged.set(id, existing);
         } else {
-          const def = defsById?.get(id);
-          merged.set(
+          merged.set(id, {
             id,
-            def
-              ? { ...def, unlockedTimestamp: Date.now(), claimed: true }
-              : {
-                  id,
-                  name: id,
-                  description: '',
-                  category: 'special',
-                  rarity: 'common',
-                  reward: {},
-                  unlockedTimestamp: Date.now(),
-                  claimed: true,
-                }
-          );
+            name: id,
+            description: '',
+            category: 'special',
+            rarity: 'common',
+            reward: {},
+            unlockedTimestamp: Date.now(),
+            claimed: true,
+          });
         }
       }
 

@@ -34,4 +34,12 @@ export interface GameSettings {
   musicEnabled: boolean;
   autoSave: boolean;
   autoSaveInterval: number; // in seconds
+  // Accessibility & UX preferences
+  highContrast?: boolean;
+  reducedMotion?: boolean;
+  largeText?: boolean;
+  stickyHover?: boolean;
+  focusVisible?: boolean;
+  simplifiedInterface?: boolean;
+  extendedTimeouts?: boolean;
 }

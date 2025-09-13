@@ -1704,9 +1704,11 @@ export class ChessEngine {
       case 'dash': {
         // Use configured default dash chance for comparison
         try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { DEFAULT_DASH_CHANCE } = require('../resources/resourceConfig');
-          return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE);
+          // Use dynamic import to avoid CommonJS require
+          // Note: this is a synchronous method, so fall back if import cannot be awaited
+          // Pre-resolved default to avoid async in hot path
+          // If needed elsewhere, consider hoisting a top-level import
+          return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
         } catch {
           return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
         }

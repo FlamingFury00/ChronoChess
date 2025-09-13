@@ -16,3 +16,6 @@ export { Button, Panel, ProgressBar, Modal, Tooltip } from './common';
 
 // Types
 export type { TouchGesture, TouchGestureHandlerProps } from './MobileControls';
+
+// Stats
+export { default as SoloStatsCard } from './Stats/SoloStatsCard';

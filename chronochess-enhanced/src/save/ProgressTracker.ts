@@ -460,11 +460,9 @@ export class ProgressTracker {
     if (existingAchievement) {
       // If it exists and is claimed, don't try to unlock again
       if (existingAchievement.claimed) {
-        console.log(`🔒 Achievement already claimed, skipping: ${achievementId}`);
         return false;
       }
       // If it exists but not claimed, it's already unlocked and available to claim
-      console.log(`ℹ️ Achievement already unlocked but not claimed: ${achievementId}`);
       return false;
     }
 
@@ -1077,25 +1075,21 @@ export class ProgressTracker {
     arcaneMana?: number;
     aetherShards?: number;
   }): Promise<void> {
-    console.log(`🎯 trackResourceAccumulation called with resources:`, resources);
+    // Removed verbose resource accumulation debug logging
     await this.ensureInitialized();
 
     // Check temporal essence achievements
     if (resources.temporalEssence) {
       if (resources.temporalEssence >= 1000) {
-        console.log(`🎯 Checking for resource collector achievement...`);
         await this.unlockAchievementIfEligible('resource_collector');
       }
       if (resources.temporalEssence >= 10000) {
-        console.log(`🎯 Checking for wealth accumulator achievement...`);
         await this.unlockAchievementIfEligible('wealth_accumulator');
       }
       if (resources.temporalEssence >= 100000) {
-        console.log(`🎯 Checking for temporal lord achievement...`);
         await this.unlockAchievementIfEligible('temporal_lord');
       }
       if (resources.temporalEssence >= 1000000) {
-        console.log(`🎯 Checking for resource tycoon achievement...`);
         await this.unlockAchievementIfEligible('resource_tycoon');
       }
     }
@@ -1103,16 +1097,12 @@ export class ProgressTracker {
     // Check mnemonic dust achievements
     if (resources.mnemonicDust) {
       if (resources.mnemonicDust >= 500) {
-        console.log(`🎯 Checking for dust collector achievement...`);
         await this.unlockAchievementIfEligible('dust_collector');
       }
       if (resources.mnemonicDust >= 5000) {
-        console.log(`🎯 Checking for dust master achievement...`);
         await this.unlockAchievementIfEligible('dust_master');
       }
     }
-
-    console.log(`✅ trackResourceAccumulation completed`);
   }
 
   /**

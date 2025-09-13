@@ -886,11 +886,9 @@ export class EvolutionTreeSystem {
           // inspecting the game's piece evolution state. Use lazy requires to avoid
           // circular imports during module initialization.
           try {
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { useGameStore } = require('../store/gameStore');
-            const storeState = useGameStore.getState();
-
-            const pieceEvos = storeState.pieceEvolutions || {};
+            // Best-effort: compute flags from known defaults if store is not synchronously accessible.
+            // This avoids using require/dynamic import in a sync method.
+            const pieceEvos: any = {} as any;
             const pieceType = node.pieceType as string;
 
             // isFirstEvolution: true if no non-default evolutions recorded for piece

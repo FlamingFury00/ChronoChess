@@ -1,3 +1,5 @@
+// Vitest setup: extend expect with @testing-library/jest-dom matchers and types
+import '@testing-library/jest-dom/vitest';
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 

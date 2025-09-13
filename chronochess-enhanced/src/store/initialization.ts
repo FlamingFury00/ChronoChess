@@ -294,9 +294,7 @@ export function updateResourceGenerationMode(currentScene: SceneType, user: User
   const store = useGameStore.getState();
   const shouldBeInStandby = shouldResourceGenerationBeInStandby(currentScene, user);
 
-  console.log(
-    `🔄 Setting resource generation standby mode: ${shouldBeInStandby} (scene: ${currentScene})`
-  );
+  // Removed debug log: setting resource generation standby mode
   store.setResourceGenerationStandby(shouldBeInStandby);
 }
 
@@ -307,13 +305,12 @@ export function initializeResourceGeneration(currentScene: SceneType, user: User
   const store = useGameStore.getState();
 
   // Always start resource generation (with built-in duplicate prevention)
-  console.log('⚡ Starting resource generation...');
   store.startResourceGeneration();
 
   // Set the appropriate generation mode based on scene
   updateResourceGenerationMode(currentScene, user);
 
-  console.log('✅ Resource generation initialized for scene:', currentScene);
+  // Removed debug log: resource generation initialized for scene
 }
 
 /**

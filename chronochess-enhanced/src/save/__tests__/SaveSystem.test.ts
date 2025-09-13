@@ -352,7 +352,8 @@ describe('SaveSystem', () => {
       expect(result!.gameState).toEqual(mockGameState);
       expect(result!.resources).toEqual(mockResourceState);
       expect(result!.evolutions.size).toBe(1);
-      expect(result!.settings).toEqual(mockSettings);
+      // Settings may include additional fields over time; match the subset
+      expect(result!.settings).toMatchObject(mockSettings);
     });
 
     it('should return null for non-existent save', async () => {

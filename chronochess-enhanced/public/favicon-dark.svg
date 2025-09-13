@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ChronoChess Dark Favicon">
+  <style>
+    :root { --bg: #0a0a0b; --piece: #f7f7f7; --accent: #7aa2f7; --accentDark: #5a7fd7; }
+  </style>
+  <rect width="256" height="256" rx="48" fill="var(--bg)"/>
+  <defs>
+    <linearGradient id="accentGrad" x1="72" y1="196" x2="184" y2="164" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="var(--accent)"/>
+      <stop offset="100%" stop-color="var(--accentDark)"/>
+    </linearGradient>
+    <filter id="pieceShadow" x="0" y="0" width="256" height="256" filterUnits="userSpaceOnUse">
+      <feOffset dy="4"/>
+      <feGaussianBlur stdDeviation="6"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.28 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="shadow"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="shadow" result="shape"/>
+    </filter>
+  </defs>
+  <ellipse cx="128" cy="176" rx="60" ry="16" fill="url(#accentGrad)" opacity="0.45"/>
+  <g filter="url(#pieceShadow)">
+    <path d="M128 40c-18 0-32 14-32 32v16h-8c-8.8 0-16 7.2-16 16v8c0 6.6 5.4 12 12 12h4v12l-20 24v16h112v-16l-20-24v-12h4c6.6 0 12-5.4 12-12v-8c0-8.8-7.2-16-16-16h-8V72c0-18-14-32-32-32z" fill="var(--piece)"/>
+  </g>
+</svg>

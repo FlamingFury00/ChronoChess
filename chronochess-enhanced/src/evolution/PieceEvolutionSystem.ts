@@ -771,19 +771,25 @@ export class PieceEvolutionSystem {
       // like powerful_combination and combination_collector are considered.
       try {
         // Import lazily to avoid circular dependency at module load time
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { progressTracker } = require('../save/ProgressTracker');
-        if (progressTracker && typeof progressTracker.trackEvolutionCombination === 'function') {
+        void (async () => {
           try {
-            progressTracker
-              .trackEvolutionCombination(new Map([[evolution.pieceType, evolution]]))
-              .catch((err: any) =>
-                console.warn('Failed to notify ProgressTracker of combination discovery:', err)
-              );
+            const { progressTracker } = await import('../save/ProgressTracker');
+            if (
+              progressTracker &&
+              typeof progressTracker.trackEvolutionCombination === 'function'
+            ) {
+              try {
+                await progressTracker.trackEvolutionCombination(
+                  new Map([[evolution.pieceType, evolution]])
+                );
+              } catch (err) {
+                console.warn('Failed to notify ProgressTracker of combination discovery:', err);
+              }
+            }
           } catch (err) {
-            console.warn('Failed to call trackEvolutionCombination:', err);
+            // Ignore - progress tracker may not be available in some contexts (tests)
           }
-        }
+        })();
       } catch (err) {
         // Ignore - progress tracker may not be available in some contexts (tests)
       }

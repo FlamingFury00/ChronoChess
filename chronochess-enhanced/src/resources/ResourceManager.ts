@@ -125,9 +125,7 @@ export class ResourceManager {
         ) / 100;
     }
 
-    console.log(
-      `📊 Resources: TE:${this.resources.temporalEssence.toFixed(1)} MD:${this.resources.mnemonicDust.toFixed(1)} AM:${this.resources.arcaneMana.toFixed(1)} AS:${this.resources.aetherShards}`
-    );
+    // Removed verbose per-tick resource logging
 
     // Accumulate play time and periodically report to ProgressTracker to unlock time-based achievements
     try {
@@ -137,23 +135,24 @@ export class ResourceManager {
         const toAdd = Math.floor(this.playTimeAccumulatorMs);
         this.playTimeAccumulatorMs = 0;
         try {
-          // Lazy require to avoid circular imports
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const { progressTracker } = require('../save/ProgressTracker');
-          if (progressTracker && typeof progressTracker.updateStatistic === 'function') {
-            // Update statistic (add) and then trigger play time achievement check
-            progressTracker
-              .updateStatistic('totalPlayTime', toAdd, 'add')
-              .then(async () => {
+          // Use dynamic ESM import to avoid require in ESM/browser
+          void (async () => {
+            try {
+              const { progressTracker } = await import('../save/ProgressTracker');
+              if (progressTracker && typeof progressTracker.updateStatistic === 'function') {
+                // Update statistic (add) and then trigger play time achievement check
+                await progressTracker.updateStatistic('totalPlayTime', toAdd, 'add');
                 try {
                   const stats = await progressTracker.getPlayerStatistics();
                   if (stats && typeof stats.totalPlayTime === 'number') {
                     progressTracker.trackPlayTime(stats.totalPlayTime).catch(() => {});
                   }
                 } catch (err) {}
-              })
-              .catch((err: any) => console.warn('Failed to update totalPlayTime stat:', err));
-          }
+              }
+            } catch (err) {
+              // Ignore - progress tracker may not be present in tests or headless env
+            }
+          })();
         } catch (err) {
           // Ignore - progress tracker may not be present in tests or headless env
         }
@@ -318,17 +317,20 @@ export class ResourceManager {
 
     // Notify progress tracker about elegant victory for achievements
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { progressTracker } = require('../save/ProgressTracker');
-      if (progressTracker && typeof progressTracker.trackElegantMove === 'function') {
+      void (async () => {
         try {
-          progressTracker
-            .trackElegantMove()
-            .catch((err: any) =>
-              console.warn('Failed to notify ProgressTracker of elegant move:', err)
-            );
-        } catch (err) {}
-      }
+          const { progressTracker } = await import('../save/ProgressTracker');
+          if (progressTracker && typeof progressTracker.trackElegantMove === 'function') {
+            try {
+              await progressTracker.trackElegantMove();
+            } catch (err) {
+              console.warn('Failed to notify ProgressTracker of elegant move:', err);
+            }
+          }
+        } catch (err) {
+          // ignore
+        }
+      })();
     } catch (err) {
       // ignore in environments without ProgressTracker
     }

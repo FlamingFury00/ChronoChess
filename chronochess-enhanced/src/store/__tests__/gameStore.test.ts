@@ -270,6 +270,14 @@ describe('GameStore', () => {
           },
         },
         evolutions: [],
+        pieceEvolutions: {
+          pawn: { marchSpeed: 1, resilience: 0, promotionPreference: 'q' },
+          knight: { dashChance: 0.1, dashCooldown: 5 },
+          bishop: { snipeRange: 1, consecrationTurns: 3 },
+          rook: { entrenchThreshold: 3, entrenchPower: 1 },
+          queen: { dominanceAuraRange: 1, manaRegenBonus: 0.1 },
+          king: { royalDecreeUses: 1, lastStandThreshold: 0.2 },
+        },
         settings: {
           quality: 'high',
           soundEnabled: false,
@@ -295,7 +303,8 @@ describe('GameStore', () => {
       const state = useGameStore.getState();
       expect(state.game).toEqual(saveData.game);
       expect(state.resources).toEqual(saveData.resources);
-      expect(state.settings).toEqual(saveData.settings);
+      // Settings can be extended over time; ensure at least the saved subset matches
+      expect(state.settings).toMatchObject(saveData.settings);
       expect(state.moveHistory).toEqual(saveData.moveHistory);
     });
 
@@ -361,6 +370,14 @@ describe('GameStore', () => {
           },
         },
         evolutions: [],
+        pieceEvolutions: {
+          pawn: { marchSpeed: 1, resilience: 0, promotionPreference: 'q' },
+          knight: { dashChance: 0.1, dashCooldown: 5 },
+          bishop: { snipeRange: 1, consecrationTurns: 3 },
+          rook: { entrenchThreshold: 3, entrenchPower: 1 },
+          queen: { dominanceAuraRange: 1, manaRegenBonus: 0.1 },
+          king: { royalDecreeUses: 1, lastStandThreshold: 0.2 },
+        },
         settings: {
           quality: 'low',
           soundEnabled: true,

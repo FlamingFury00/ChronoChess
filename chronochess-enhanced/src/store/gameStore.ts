@@ -314,6 +314,13 @@ const initialSettings: GameSettings = {
   musicEnabled: true,
   autoSave: true,
   autoSaveInterval: 60,
+  highContrast: false,
+  reducedMotion: false,
+  largeText: false,
+  stickyHover: false,
+  focusVisible: false,
+  simplifiedInterface: false,
+  extendedTimeouts: false,
 };
 
 // Constants for save system
@@ -518,6 +525,22 @@ try {
   // ignore
 }
 // Use the simple sound player for basic audio effects
+
+// Helper: apply accessibility CSS classes to <body> based on settings
+function applyAccessibilityFromSettings(s: GameSettings): void {
+  try {
+    const body = document.body;
+    const applyClass = (cls: string, enabled?: boolean) => {
+      if (enabled) body.classList.add(cls);
+      else body.classList.remove(cls);
+    };
+    applyClass('high-contrast', s.highContrast);
+    applyClass('reduced-motion', s.reducedMotion);
+    applyClass('large-text', s.largeText);
+    applyClass('sticky-hover', s.stickyHover);
+    applyClass('focus-visible', s.focusVisible);
+  } catch {}
+}
 
 export const useGameStore = create<GameStore>()(
   subscribeWithSelector((set, get) => {
@@ -893,12 +916,15 @@ export const useGameStore = create<GameStore>()(
             });
           }
 
+          // Merge settings with defaults to include new fields added over time
+          const mergedSettings: GameSettings = { ...initialSettings, ...saveData.settings } as any;
+
           set({
             game: saveData.game,
             resources: finalResources,
             evolutions: evolutionsMap,
             pieceEvolutions: saveData.pieceEvolutions || getDefaultPieceEvolutions(),
-            settings: saveData.settings,
+            settings: mergedSettings,
             moveHistory: saveData.moveHistory || [],
             undoStack: saveData.undoStack || [],
             redoStack: saveData.redoStack || [],
@@ -927,19 +953,23 @@ export const useGameStore = create<GameStore>()(
                 '🏆 Restoring achievements from cloud save:',
                 saveData.achievements.length
               );
-              // Lazy require to avoid circular dependency during module evaluation
-              const { progressTracker } = require('../save/ProgressTracker');
-              if (
-                progressTracker &&
-                typeof progressTracker.restoreAchievementsFromSave === 'function'
-              ) {
-                progressTracker
-                  .ensureInitialized()
-                  .then(() => progressTracker.restoreAchievementsFromSave(saveData.achievements))
-                  .catch((err: any) =>
-                    console.warn('Failed to restore achievements from save:', err)
-                  );
-              }
+              // Use dynamic ESM import to avoid CommonJS require in browser/ESM runtime
+              void (async () => {
+                try {
+                  const { progressTracker } = await import('../save/ProgressTracker');
+                  if (
+                    progressTracker &&
+                    typeof progressTracker.restoreAchievementsFromSave === 'function'
+                  ) {
+                    await progressTracker.ensureInitialized();
+                    await progressTracker.restoreAchievementsFromSave(
+                      saveData.achievements as any[]
+                    );
+                  }
+                } catch (err) {
+                  console.warn('Failed to restore achievements from save:', err);
+                }
+              })();
             } catch (err) {
               console.warn('Failed to access ProgressTracker for achievement restoration:', err);
             }
@@ -947,24 +977,21 @@ export const useGameStore = create<GameStore>()(
 
           // Reconcile resource-based achievements with ProgressTracker after loading
           try {
-            // Lazy require to avoid circular dependency during module evaluation
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { progressTracker } = require('../save/ProgressTracker');
-            if (
-              progressTracker &&
-              typeof progressTracker.reconcileAchievementsWithStats === 'function'
-            ) {
-              // Ensure ProgressTracker is fully initialized before reconciliation
-              // to prevent claimed achievements from being re-unlocked
-              progressTracker
-                .ensureInitialized()
-                .then(() => {
-                  return progressTracker.reconcileAchievementsWithStats(finalResources);
-                })
-                .catch((err: any) =>
-                  console.warn('Failed to reconcile achievements after load:', err)
-                );
-            }
+            // Use dynamic ESM import to avoid CommonJS require in browser/ESM runtime
+            void (async () => {
+              try {
+                const { progressTracker } = await import('../save/ProgressTracker');
+                if (
+                  progressTracker &&
+                  typeof progressTracker.reconcileAchievementsWithStats === 'function'
+                ) {
+                  await progressTracker.ensureInitialized();
+                  await progressTracker.reconcileAchievementsWithStats(finalResources);
+                }
+              } catch (err) {
+                console.warn('Failed to reconcile achievements after load:', err);
+              }
+            })();
           } catch (err) {
             // ignore in environments without progress tracker
           }
@@ -976,6 +1003,11 @@ export const useGameStore = create<GameStore>()(
           } catch (err) {
             console.warn('🔄 Failed to sync chess engine after deserialize:', err);
           }
+
+          // Apply loaded accessibility preferences to document body
+          try {
+            applyAccessibilityFromSettings(mergedSettings);
+          } catch {}
 
           // Re-sync ResourceManager with loaded state (including offline progress)
           resourceManager.setResourceState(finalResources);
@@ -1357,16 +1389,17 @@ export const useGameStore = create<GameStore>()(
           console.error('❌ Failed to load from storage:', error);
           // Try a final recovery path leveraging guestDataManager (if guest context)
           try {
-            const { recoverGuestData } = require('../lib/guestDataManager');
-            recoverGuestData()
-              .then((r: any) => {
+            void (async () => {
+              try {
+                const { recoverGuestData } = await import('../lib/guestDataManager');
+                const r = await recoverGuestData();
                 if (r && r.recovered) {
                   console.log('✅ Guest data manager recovered some progress sources:', r.sources);
                 }
-              })
-              .catch((err: any) =>
-                console.warn('Guest data manager recovery attempt failed:', err)
-              );
+              } catch (err) {
+                console.warn('Guest data manager recovery attempt failed:', err);
+              }
+            })();
           } catch (gdErr) {
             console.warn('Guest data manager not available for recovery:', gdErr);
           }
@@ -1580,18 +1613,13 @@ export const useGameStore = create<GameStore>()(
         // This prevents multiple intervals from running simultaneously
         get().stopResourceGeneration();
 
-        console.log('⚡ Starting resource generation (ensuring no duplicates)...');
+        // Removed debug log: starting resource generation
 
         // CRITICAL FIX: Sync ResourceManager with current store state before starting generation
         const currentState = get();
         try {
           resourceManager.setResourceState(currentState.resources);
-          console.log('🔧 ResourceManager synchronized with store state before generation start:', {
-            temporalEssence: currentState.resources.temporalEssence,
-            mnemonicDust: currentState.resources.mnemonicDust,
-            aetherShards: currentState.resources.aetherShards,
-            arcaneMana: currentState.resources.arcaneMana,
-          });
+          // Removed debug log: ResourceManager synchronized before generation start
         } catch (err) {
           console.error('Failed to sync ResourceManager before starting generation:', err);
         }
@@ -1658,11 +1686,11 @@ export const useGameStore = create<GameStore>()(
           }
         }, 300); // Update UI every 300ms to reduce update flood while keeping smooth display
 
-        console.log('✅ Resource generation started with UI sync interval');
+        // Removed debug log: resource generation started
       },
 
       stopResourceGeneration: () => {
-        console.log('🛑 Stopping resource generation...');
+        // Removed debug log: stopping resource generation
 
         // Stop ResourceManager generation
         resourceManager.stopGeneration();
@@ -1671,7 +1699,7 @@ export const useGameStore = create<GameStore>()(
         if (resourceUpdateInterval) {
           clearInterval(resourceUpdateInterval);
           resourceUpdateInterval = null;
-          console.log('✅ Resource UI update interval cleared');
+          // Removed debug log: resource UI update interval cleared
         }
       },
 
@@ -1852,13 +1880,62 @@ export const useGameStore = create<GameStore>()(
       // Settings actions
       updateSettings: settings => {
         const state = get();
-        const newSettings = { ...state.settings, ...settings };
+        const newSettings = { ...state.settings, ...settings } as GameSettings;
 
         set({ settings: newSettings });
 
+        // Apply graphics quality to renderer if available
+        try {
+          if (settings.quality) {
+            const renderer = (window as any).chronoChessRenderer;
+            if (renderer && typeof renderer.setQualityLevel === 'function') {
+              // The renderer accepts the string union directly ('low' | 'medium' | 'high' | 'ultra')
+              renderer.setQualityLevel(settings.quality as any);
+            }
+          }
+        } catch (err) {
+          // non-fatal
+        }
+
+        // Apply audio enable/disable best-effort (SimpleSoundPlayer is procedural only)
+        try {
+          if (typeof settings.soundEnabled !== 'undefined') {
+            // No global mute available on SimpleSoundPlayer; future integration could route through AudioManager
+          }
+          if (typeof settings.musicEnabled !== 'undefined') {
+            void (async () => {
+              try {
+                const audio = await import('../audio');
+                if (audio && audio.ambientSoundscapeSystem) {
+                  if (!newSettings.musicEnabled) {
+                    audio.ambientSoundscapeSystem.stopSoundscape(0.5).catch(() => {});
+                  } else {
+                    try {
+                      audio.ambientSoundscapeSystem
+                        .startSoundscape({
+                          mood: 'neutral',
+                          intensity: 0.3,
+                          layers: ['base'],
+                          crossfadeTime: 0.8,
+                          spatialEnabled: false,
+                        })
+                        .catch(() => {});
+                    } catch {}
+                  }
+                }
+              } catch {}
+            })();
+          }
+        } catch {}
+
+        // Apply accessibility CSS class toggles
+        try {
+          applyAccessibilityFromSettings(newSettings);
+        } catch {}
+
         // Handle auto-save setting changes
         if ('autoSave' in settings) {
-          if (settings.autoSave) {
+          if ((settings as any).autoSave) {
             get().enableAutoSave(newSettings.autoSaveInterval);
           } else {
             get().disableAutoSave();
@@ -1866,6 +1943,15 @@ export const useGameStore = create<GameStore>()(
         } else if ('autoSaveInterval' in settings && newSettings.autoSave) {
           get().enableAutoSave(newSettings.autoSaveInterval);
         }
+
+        // Persist settings promptly (throttle by simple timeout)
+        try {
+          setTimeout(() => {
+            try {
+              get().saveToStorage();
+            } catch {}
+          }, 50);
+        } catch {}
       },
 
       // Solo mode actions
@@ -6351,7 +6437,7 @@ export const useGameStore = create<GameStore>()(
           console.warn('Failed to sync ResourceManager generation rates:', err);
         }
 
-        console.log('🔄 Updated generation rates:', updatedRates);
+        // Removed debug log: updated generation rates
       },
 
       reset: () => {

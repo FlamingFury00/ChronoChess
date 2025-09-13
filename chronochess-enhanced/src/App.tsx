@@ -114,6 +114,22 @@ function App() {
     }
   }, [ui.currentScene, user, isInitialized, gameSystemsActive]);
 
+  // Update document title based on current scene
+  useEffect(() => {
+    const sceneTitleMap: Record<SceneType, string> = {
+      landing: 'Landing',
+      auth: 'Sign In',
+      menu: 'Menu',
+      soloMode: 'Solo Mode',
+      evolution: 'Evolution',
+      settings: 'Settings',
+      achievements: 'Achievements',
+      profile: 'Profile',
+    };
+    const suffix = sceneTitleMap[ui.currentScene] || 'Play';
+    document.title = `ChronoChess — ${suffix}`;
+  }, [ui.currentScene]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useMemo } from 'react';
 import { useGameStore } from '../../store';
 import { useToast } from '../../components/common/ToastProvider';
 import { Button } from '../../components/common';
-import { ResourceDisplay, MobileGameOverlay } from '../../components';
+import { ResourceDisplay, MobileGameOverlay, SoloStatsCard } from '../../components';
 import { ThreeJSRenderer } from '../../rendering';
 import type { SceneProps } from '../types';
 import './SoloModeScene.css';
@@ -457,28 +457,12 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
             </ul>
           </div>
 
-          <div className="solo-mode-scene__stats-card">
-            <h3>Your Progress</h3>
-            <div className="solo-mode-scene__stats-grid">
-              <div className="solo-mode-scene__stat-item">
-                <span className="solo-mode-scene__stat-value">{stats.encountersWon}</span>
-                <span className="solo-mode-scene__stat-label">Victories</span>
-              </div>
-              <div className="solo-mode-scene__stat-item">
-                <span className="solo-mode-scene__stat-value">{stats.totalEncounters}</span>
-                <span className="solo-mode-scene__stat-label">Total Battles</span>
-              </div>
-              <div className="solo-mode-scene__stat-item">
-                <span className="solo-mode-scene__stat-value">
-                  {stats.totalEncounters > 0
-                    ? Math.round((stats.encountersWon / stats.totalEncounters) * 100)
-                    : 0}
-                  %
-                </span>
-                <span className="solo-mode-scene__stat-label">Win Rate</span>
-              </div>
-            </div>
-          </div>
+          <SoloStatsCard
+            stats={stats}
+            classNamePrefix="solo-mode-scene"
+            title="Your Progress"
+            fields={['victories', 'totalBattles', 'winRate']}
+          />
 
           <div className="solo-mode-scene__boosters-card">
             <h3>Boosters</h3>

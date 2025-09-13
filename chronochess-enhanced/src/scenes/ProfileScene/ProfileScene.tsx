@@ -15,6 +15,7 @@ import './ProfileScene.css';
 import { useGameStore } from '../../store/gameStore';
 import { ProgressBar } from '../../components/common';
 import { getLevelProgress, LEVEL_CAP } from '../../lib/leveling';
+// import removed: SoloStatsCard no longer used; we sync main stats to solo stats directly
 
 export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -175,17 +176,17 @@ export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
               </div>
               <div className="profile-scene__stat-item">
                 <span className="profile-scene__stat-label">Games Played</span>
-                <span className="profile-scene__stat-value">{userProfile.games_played}</span>
+                <span className="profile-scene__stat-value">{soloStats?.totalEncounters ?? 0}</span>
               </div>
               <div className="profile-scene__stat-item">
                 <span className="profile-scene__stat-label">Games Won</span>
-                <span className="profile-scene__stat-value">{userProfile.games_won}</span>
+                <span className="profile-scene__stat-value">{soloStats?.encountersWon ?? 0}</span>
               </div>
               <div className="profile-scene__stat-item">
                 <span className="profile-scene__stat-label">Win Rate</span>
                 <span className="profile-scene__stat-value">
-                  {userProfile.games_played > 0
-                    ? `${Math.round((userProfile.games_won / userProfile.games_played) * 100)}%`
+                  {soloStats && soloStats.totalEncounters > 0
+                    ? `${Math.round((soloStats.encountersWon / soloStats.totalEncounters) * 100)}%`
                     : '0%'}
                 </span>
               </div>
@@ -195,30 +196,17 @@ export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                   {new Date(userProfile.created_at).toLocaleDateString()}
                 </span>
               </div>
-              {soloStats && (
-                <>
-                  <div className="profile-scene__stat-item">
-                    <span className="profile-scene__stat-label">Current Streak</span>
-                    <span className="profile-scene__stat-value">{soloStats.currentWinStreak}</span>
-                  </div>
-                  <div className="profile-scene__stat-item">
-                    <span className="profile-scene__stat-label">Best Streak</span>
-                    <span className="profile-scene__stat-value">{soloStats.bestWinStreak}</span>
-                  </div>
-                  <div className="profile-scene__stat-item">
-                    <span className="profile-scene__stat-label">Solo Wins</span>
-                    <span className="profile-scene__stat-value">{soloStats.encountersWon}</span>
-                  </div>
-                  <div className="profile-scene__stat-item">
-                    <span className="profile-scene__stat-label">Solo Losses</span>
-                    <span className="profile-scene__stat-value">{soloStats.encountersLost}</span>
-                  </div>
-                  <div className="profile-scene__stat-item">
-                    <span className="profile-scene__stat-label">Total Encounters</span>
-                    <span className="profile-scene__stat-value">{soloStats.totalEncounters}</span>
-                  </div>
-                </>
-              )}
+
+              <div className="profile-scene__stat-item">
+                <span className="profile-scene__stat-label">Current Streak</span>
+                <span className="profile-scene__stat-value">
+                  {soloStats?.currentWinStreak ?? 0}
+                </span>
+              </div>
+              <div className="profile-scene__stat-item">
+                <span className="profile-scene__stat-label">Best Streak</span>
+                <span className="profile-scene__stat-value">{soloStats?.bestWinStreak ?? 0}</span>
+              </div>
             </div>
 
             {/* XP Progress to next level (exponential curve) */}
