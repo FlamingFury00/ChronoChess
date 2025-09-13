@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 
 .netlify/
+
+# Local Vite cache
+.vite/
+
+# TypeScript build info
+*.tsbuildinfo
