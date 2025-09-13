@@ -16,6 +16,59 @@ import type { User, AuthError } from '@supabase/supabase-js';
 import type { UserProfile } from '../../lib/profileService';
 import './AuthScene.css';
 
+// Inline icons for password visibility
+const EyeIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M2.036 12.322a1.012 1.012 0 0 1 0-.644C3.423 7.51 7.364 4.5 12 4.5c4.636 0 8.577 3.01 9.964 7.178.07.207.07.437 0 .644C20.577 16.49 16.636 19.5 12 19.5c-4.636 0-8.577-3.01-9.964-7.178Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const EyeOffIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path
+      d="M3.98 8.223C2.503 9.723 1.5 12 1.5 12s3.75 7.5 10.5 7.5c2.008 0 3.867-.54 5.43-1.463M6.84 6.832A10.443 10.443 0 0 1 12 4.5c6.75 0 10.5 7.5 10.5 7.5a21.77 21.77 0 0 1-2.712 3.651"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M9.75 9.75a3 3 0 0 0 4.2 4.2M3 3l18 18"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -23,6 +76,10 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [message, setMessage] = useState<string>('');
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // Password visibility toggles
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const supabase = getSupabaseClient();
 
@@ -239,6 +296,10 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     setMessage('');
     loginForm.reset();
     registerForm.reset();
+    // Reset visibility toggles when switching modes
+    setShowLoginPassword(false);
+    setShowRegisterPassword(false);
+    setShowConfirmPassword(false);
   };
 
   // If user is authenticated, show profile/dashboard
@@ -437,15 +498,28 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
               </label>
               {isLogin ? (
                 <>
-                  <input
-                    {...loginRegister('password')}
-                    type="password"
-                    id="password"
-                    className={`auth-scene__input ${loginErrors.password ? 'auth-scene__input--error' : ''}`}
-                    placeholder="Enter your password"
-                    disabled={loading}
-                    autoComplete="current-password"
-                  />
+                  <div className="auth-scene__input-wrapper">
+                    <input
+                      {...loginRegister('password')}
+                      type={showLoginPassword ? 'text' : 'password'}
+                      id="password"
+                      className={`auth-scene__input auth-scene__input--with-toggle ${loginErrors.password ? 'auth-scene__input--error' : ''}`}
+                      placeholder="Enter your password"
+                      disabled={loading}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      className="auth-scene__visibility-toggle"
+                      onClick={() => setShowLoginPassword(v => !v)}
+                      aria-label={`${showLoginPassword ? 'Hide' : 'Show'} password`}
+                      aria-pressed={showLoginPassword}
+                      title={`${showLoginPassword ? 'Hide' : 'Show'} password`}
+                      disabled={loading}
+                    >
+                      {showLoginPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </div>
                   {loginErrors.password && (
                     <span className="auth-scene__field-error">
                       {loginErrors.password.message as string}
@@ -454,15 +528,28 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                 </>
               ) : (
                 <>
-                  <input
-                    {...registerRegister('password')}
-                    type="password"
-                    id="password"
-                    className={`auth-scene__input ${registerErrors.password ? 'auth-scene__input--error' : ''}`}
-                    placeholder="Create a strong password"
-                    disabled={loading}
-                    autoComplete="new-password"
-                  />
+                  <div className="auth-scene__input-wrapper">
+                    <input
+                      {...registerRegister('password')}
+                      type={showRegisterPassword ? 'text' : 'password'}
+                      id="password"
+                      className={`auth-scene__input auth-scene__input--with-toggle ${registerErrors.password ? 'auth-scene__input--error' : ''}`}
+                      placeholder="Create a strong password"
+                      disabled={loading}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      className="auth-scene__visibility-toggle"
+                      onClick={() => setShowRegisterPassword(v => !v)}
+                      aria-label={`${showRegisterPassword ? 'Hide' : 'Show'} password`}
+                      aria-pressed={showRegisterPassword}
+                      title={`${showRegisterPassword ? 'Hide' : 'Show'} password`}
+                      disabled={loading}
+                    >
+                      {showRegisterPassword ? <EyeOffIcon /> : <EyeIcon />}
+                    </button>
+                  </div>
                   {registerErrors.password && (
                     <span className="auth-scene__field-error">
                       {registerErrors.password.message as string}
@@ -482,15 +569,28 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                 <label htmlFor="confirmPassword" className="auth-scene__label">
                   Confirm Password *
                 </label>
-                <input
-                  {...registerRegister('confirmPassword')}
-                  type="password"
-                  id="confirmPassword"
-                  className={`auth-scene__input ${registerErrors.confirmPassword ? 'auth-scene__input--error' : ''}`}
-                  placeholder="Confirm your password"
-                  disabled={loading}
-                  autoComplete="new-password"
-                />
+                <div className="auth-scene__input-wrapper">
+                  <input
+                    {...registerRegister('confirmPassword')}
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    id="confirmPassword"
+                    className={`auth-scene__input auth-scene__input--with-toggle ${registerErrors.confirmPassword ? 'auth-scene__input--error' : ''}`}
+                    placeholder="Confirm your password"
+                    disabled={loading}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="auth-scene__visibility-toggle"
+                    onClick={() => setShowConfirmPassword(v => !v)}
+                    aria-label={`${showConfirmPassword ? 'Hide' : 'Show'} password`}
+                    aria-pressed={showConfirmPassword}
+                    title={`${showConfirmPassword ? 'Hide' : 'Show'} password`}
+                    disabled={loading}
+                  >
+                    {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
                 {registerErrors.confirmPassword && (
                   <span className="auth-scene__field-error">
                     {registerErrors.confirmPassword.message as string}

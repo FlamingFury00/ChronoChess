@@ -44,12 +44,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-8);
-}
-
-.auth-scene__header {
+  /* removed backdrop-filter to prevent stacking context overshadowing toggle */
+  /* -webkit-backdrop-filter: blur(8px); */
   text-align: center;
 }
-
 .auth-scene__title {
   font-size: var(--font-size-4xl);
   font-weight: var(--font-weight-bold);
@@ -84,6 +82,74 @@
   gap: var(--spacing-2);
 }
 
+/* Input + toggle wrapper */
+.auth-scene__input-wrapper {
+  position: relative;
+  display: block;
+  z-index: 0; /* establish a stacking context baseline */
+  isolation: isolate; /* ensure children z-index are resolved within this context */
+}
+
+.auth-scene__input--with-toggle {
+  /* Room for a 20px icon + padding */
+  padding-right: calc(20px + var(--spacing-6));
+}
+
+.auth-scene__visibility-toggle {
+  position: absolute;
+  right: var(--spacing-2);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  z-index: 10; /* ensure well above input in this stacking context */
+  pointer-events: auto;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+  /* Prevent any unwanted repositioning */
+  min-width: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
+}
+
+.auth-scene__visibility-toggle:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  /* Ensure button stays in position and above other elements on hover */
+  z-index: 10;
+  transform: translateY(-50%); /* Override global button hover transform */
+  position: absolute;
+  /* Override global button hover styles that would interfere */
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.auth-scene__visibility-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.25);
+}
+
+.auth-scene__visibility-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Prevent the inline SVG from capturing pointer events separately */
+.auth-scene__visibility-toggle svg {
+  pointer-events: none;
+}
+
 .auth-scene__label {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -93,6 +159,9 @@
 }
 
 .auth-scene__input {
+  position: relative;
+  z-index: 1; /* below the toggle but above the wrapper */
+  width: 100%;
   padding: var(--spacing-4) var(--spacing-4);
   border: 2px solid var(--border-primary);
   border-radius: var(--radius-md);
@@ -102,8 +171,6 @@
   font-family: inherit;
   font-weight: var(--font-weight-medium);
   transition: all var(--duration-normal) var(--ease-out);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 
   /* Enhanced visibility */
   box-shadow:
@@ -119,7 +186,7 @@
     0 4px 8px rgba(0, 0, 0, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   background: var(--bg-surface-elevated);
-  transform: translateY(-1px);
+  /* Avoid vertical shift to keep the icon steady */
 }
 
 .auth-scene__input:disabled {

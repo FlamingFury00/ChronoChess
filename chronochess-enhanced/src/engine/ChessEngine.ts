@@ -2078,7 +2078,10 @@ export class ChessEngine {
         rangeIncrease: this.calculateRangeIncrease(ability),
       },
       success: true,
-      description: `${ability.name} grants enhanced movement: +${extraMoves.length} options`,
+      description:
+        extraMoves.length > 0
+          ? `${ability.name} grants enhanced movement: +${extraMoves.length} options`
+          : `${ability.name} grants enhanced movement`,
     };
   }
 
@@ -3547,7 +3550,10 @@ export class ChessEngine {
         cooldownApplied: KNIGHT_DASH_COOLDOWN,
       },
       success: true,
-      description: `Knight dashes with ${availableDashMoves.length} additional move options (${KNIGHT_DASH_COOLDOWN}s cooldown)`,
+      description:
+        availableDashMoves.length > 0
+          ? `Knight dashes with ${availableDashMoves.length} additional move options (${KNIGHT_DASH_COOLDOWN}s cooldown)`
+          : `Knight dash available (${KNIGHT_DASH_COOLDOWN}s cooldown)`,
     };
   }
 
@@ -3854,7 +3860,10 @@ export class ChessEngine {
         evaluationBonus: 25,
       },
       success: true,
-      description: `Breakthrough: can move through enemies, +${breakthroughMoves.length} moves`,
+      description:
+        breakthroughMoves.length > 0
+          ? `Breakthrough: can move through enemies, +${breakthroughMoves.length} moves`
+          : `Breakthrough: can move through enemies`,
     };
   }
 

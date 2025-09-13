@@ -1084,6 +1084,24 @@ export const useGameStore = create<GameStore>()(
           }
 
           const data = state.serialize();
+
+          // Immediately cache a plain snapshot to localStorage so callers/tests
+          // observing save side-effects can detect it synchronously. A richer
+          // achievements-enriched cache will follow below asynchronously.
+          try {
+            if (typeof localStorage !== 'undefined' && localStorage !== null) {
+              localStorage.setItem(key, JSON.stringify(data));
+              try {
+                // Best-effort backup of the plain snapshot
+                localStorage.setItem(`${key}_backup`, JSON.stringify(data));
+              } catch (backupErr) {
+                console.warn('Backup save write (plain snapshot) failed (non-fatal):', backupErr);
+              }
+            }
+          } catch (syncErr) {
+            console.warn('Synchronous localStorage save failed (non-fatal):', syncErr);
+          }
+
           // Use SaveSystem via adapter to persist everything (local + cloud sync inside)
           void persistAll(key, state.game, state.resources, state.evolutions, state.settings, {
             moveHistory: data.moveHistory,
@@ -4680,10 +4698,12 @@ export const useGameStore = create<GameStore>()(
               // Merge
               (additionalMoves as any[]).push(...dashMoves);
             }
-            console.log(
-              `🎆 Ability ${ability.id} generated ${additionalMoves.length} additional moves:`,
-              additionalMoves.map(m => m.to)
-            );
+            if (Array.isArray(additionalMoves) && additionalMoves.length > 0) {
+              console.log(
+                `🎆 Ability ${ability.id} generated ${additionalMoves.length} additional moves:`,
+                additionalMoves.map(m => m.to)
+              );
+            }
 
             additionalMoves.forEach(move => {
               if (!enhancedMoves.some(m => m.to === move.to)) {

@@ -4,7 +4,6 @@
   background: var(--bg-glass);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
-  overflow: hidden;
   position: relative;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -12,6 +11,8 @@
     inset 0 2px 4px var(--shadow-inset),
     0 2px 8px var(--shadow-secondary);
   transition: all var(--duration-normal) var(--ease-out);
+  /* Let content define height so header + track never clip */
+  overflow: visible;
 }
 
 .progress-bar:hover {
@@ -26,6 +27,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  row-gap: var(--spacing-xs);
   margin-bottom: var(--spacing-sm);
   padding: 0 var(--spacing-xs);
 }
@@ -35,6 +39,9 @@
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   line-height: var(--line-height-tight);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .progress-bar__value {
@@ -42,12 +49,15 @@
   font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
   font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Track and fill */
 .progress-bar__track {
   width: 100%;
-  height: 100%;
+  /* Height is controlled by size variants for responsiveness */
   background: var(--bg-surface);
   position: relative;
   border-radius: var(--radius-lg);
@@ -93,22 +103,21 @@
 }
 
 /* Size variants */
-.progress-bar--small {
+/* Size variants now target the track so container can auto-size */
+.progress-bar--small .progress-bar__track {
   height: 8px;
 }
-
 .progress-bar--small .progress-bar__header {
   margin-bottom: var(--spacing-xs);
 }
 
-.progress-bar--medium {
+.progress-bar--medium .progress-bar__track {
   height: 16px;
 }
 
-.progress-bar--large {
+.progress-bar--large .progress-bar__track {
   height: 24px;
 }
-
 .progress-bar--large .progress-bar__header {
   margin-bottom: var(--spacing-md);
 }
@@ -210,19 +219,13 @@
 
 /* Touch enhancements */
 @media (pointer: coarse) {
-  .progress-bar {
-    min-height: 24px;
-  }
-
-  .progress-bar--small {
+  .progress-bar--small .progress-bar__track {
     height: 12px;
   }
-
-  .progress-bar--medium {
+  .progress-bar--medium .progress-bar__track {
     height: 20px;
   }
-
-  .progress-bar--large {
+  .progress-bar--large .progress-bar__track {
     height: 32px;
   }
 }
@@ -243,7 +246,7 @@
     font-size: var(--font-size-xxs);
   }
 
-  .progress-bar--large {
+  .progress-bar--large .progress-bar__track {
     height: 20px;
   }
 }
@@ -367,15 +370,13 @@
   }
 
   /* Touch-friendly sizing */
-  .progress-bar--small {
+  .progress-bar--small .progress-bar__track {
     height: 12px;
   }
-
-  .progress-bar--medium {
+  .progress-bar--medium .progress-bar__track {
     height: 20px;
   }
-
-  .progress-bar--large {
+  .progress-bar--large .progress-bar__track {
     height: 28px;
   }
 }

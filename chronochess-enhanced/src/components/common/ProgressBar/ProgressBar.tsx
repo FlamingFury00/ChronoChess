@@ -32,6 +32,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
     }
     return `${Math.floor(value)} / ${Math.floor(max)}`;
   };
+  const displayValue = formatDisplayValue();
 
   const progressClass = [
     'progress-bar',
@@ -48,7 +49,11 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
       {(label || showValue) && (
         <div className="progress-bar__header">
           {label && <span className="progress-bar__label">{label}</span>}
-          {showValue && <span className="progress-bar__value">{formatDisplayValue()}</span>}
+          {showValue && (
+            <span className="progress-bar__value" title={displayValue}>
+              {displayValue}
+            </span>
+          )}
         </div>
       )}
       <div className="progress-bar__track">
@@ -60,6 +65,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({
           aria-valuemin={0}
           aria-valuemax={max}
           aria-label={label || 'Progress'}
+          aria-valuetext={displayValue}
         >
           {animated && <div className="progress-bar__shine" />}
         </div>

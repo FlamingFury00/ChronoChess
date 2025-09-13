@@ -3,6 +3,7 @@ import { Button } from '../../components/common';
 import ResourceDisplay from '../../components/ResourceDisplay/ResourceDisplay';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { getCurrentUser } from '../../lib/supabaseAuth';
+import { getSupabaseClient } from '../../lib/supabaseClient';
 import { getCurrentUserProfile } from '../../lib/profileService';
 import { checkGuestDataStatus, recoverGuestData } from '../../lib/guestDataManager';
 import type { SceneProps } from '../types';
@@ -14,6 +15,7 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showDataRecovery, setShowDataRecovery] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -87,6 +89,23 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     setShowDataRecovery(false);
   };
 
+  const handleSignOut = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    setLoggingOut(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      setUser(null);
+      setUserProfile(null);
+    } catch (err) {
+      console.warn('Error signing out:', err);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   return (
     <div className="menu-scene scene">
       <div className="menu-scene__background">
@@ -105,14 +124,26 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                   <span className="menu-scene__user-level">Level {userProfile.level}</span>
                   <span className="menu-scene__user-xp">{userProfile.experience_points} XP</span>
                 </div>
-                <Button
-                  onClick={() => onSceneChange('profile')}
-                  variant="ghost"
-                  size="small"
-                  className="menu-scene__profile-button"
-                >
-                  👤 Profile
-                </Button>
+                <div className="menu-scene__profile-actions">
+                  <Button
+                    onClick={() => onSceneChange('profile')}
+                    variant="ghost"
+                    size="small"
+                    className="menu-scene__profile-button"
+                  >
+                    👤 Profile
+                  </Button>
+                  <Button
+                    onClick={handleSignOut}
+                    variant="ghost"
+                    size="small"
+                    disabled={loggingOut}
+                    className="menu-scene__profile-button menu-scene__logout-button"
+                    aria-label="Log out"
+                  >
+                    🔓 Log Out
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="menu-scene__auth-prompt">
