@@ -24,8 +24,13 @@ export class CloudSaveService {
   async save(slotId: string, saveData: SaveData, metadata: Omit<SaveSlot, 'id'>): Promise<void> {
     const supabase = getSupabaseClient();
     if (!supabase) throw new Error('Cloud not configured');
+
     const user = await ensureAuthenticatedUser();
-    if (!user) throw new Error('Auth required');
+    if (!user) {
+      // Gracefully handle unauthenticated users - don't throw error, just skip cloud save
+      console.log('No authenticated user found, skipping cloud save (local-only mode)');
+      return;
+    }
 
     const record: CloudSaveRecord = {
       id: slotId,

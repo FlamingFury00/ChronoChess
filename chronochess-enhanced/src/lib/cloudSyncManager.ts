@@ -73,8 +73,16 @@ export async function syncGuestProgressToCloud(slotId: string = 'chronochess_sav
           !localData.unlockedEvolutions || localData.unlockedEvolutions.length === 0;
         const playTime = localData.soloModeStats?.totalPlayTime || 0;
         const totalMoves = localData.moveHistory?.length || 0;
-        // Consider trivial if everything is essentially untouched
-        return allZeroResources && noEvolutions && playTime < 60_000 && totalMoves === 0;
+        const hasAchievements =
+          Array.isArray(localData.achievements) && localData.achievements.length > 0;
+        // Consider trivial if everything is essentially untouched AND there are no achievements
+        return (
+          allZeroResources &&
+          noEvolutions &&
+          playTime < 60_000 &&
+          totalMoves === 0 &&
+          !hasAchievements
+        );
       } catch {
         return false;
       }
@@ -105,6 +113,30 @@ export async function syncGuestProgressToCloud(slotId: string = 'chronochess_sav
             soloModeStats: restored.extras?.soloModeStats,
             unlockedEvolutions: restored.extras?.unlockedEvolutions,
           });
+          // If cloud snapshot is gameplay-trivial (e.g. achievements-only) and local is not,
+          // avoid overwriting local resources. Instead, merge achievements into local and upload.
+          const cloudIsTrivial = isTrivialSnapshot({
+            resources: restored.resources,
+            evolutions: restored.evolutions,
+            moveHistory: restored.extras?.moveHistory || [],
+            soloModeStats: restored.extras?.soloModeStats,
+            unlockedEvolutions: restored.extras?.unlockedEvolutions,
+          });
+          if (cloudIsTrivial && !isTrivialLocal) {
+            try {
+              const achievements = restored.extras?.achievements || [];
+              if (achievements.length > 0) {
+                const { progressTracker } = await import('../save/ProgressTracker');
+                await progressTracker.initialize();
+                await progressTracker.restoreAchievementsFromSave(achievements);
+              }
+            } catch (mergeErr) {
+              console.warn('[cloudSync] Achievement merge failed (non-fatal):', mergeErr);
+            }
+            await uploadCurrentStoreState(slotId);
+            safeToast('Merged cloud achievements; kept local resources.');
+            return { action: 'uploaded-local', localTimestamp, cloudTimestamp };
+          }
           if (isTrivialLocal || cloudProgressScore > computeProgressScore(localData)) {
             hydrateStoreFromRestored(restored);
             safeToast('Cloud progress preferred over trivial/newer local.');
@@ -127,6 +159,30 @@ export async function syncGuestProgressToCloud(slotId: string = 'chronochess_sav
       // Cloud newer -> download and hydrate store
       const restored = await restoreAll(slotId);
       if (restored) {
+        // If the cloud snapshot is trivial (e.g., achievements-only) and local isn’t,
+        // then merge achievements into local and upload local instead of overwriting resources.
+        const cloudIsTrivial = isTrivialSnapshot({
+          resources: restored.resources,
+          evolutions: restored.evolutions,
+          moveHistory: restored.extras?.moveHistory || [],
+          soloModeStats: restored.extras?.soloModeStats,
+          unlockedEvolutions: restored.extras?.unlockedEvolutions,
+        });
+        if (cloudIsTrivial && !isTrivialLocal) {
+          try {
+            const achievements = restored.extras?.achievements || [];
+            if (achievements.length > 0) {
+              const { progressTracker } = await import('../save/ProgressTracker');
+              await progressTracker.initialize();
+              await progressTracker.restoreAchievementsFromSave(achievements);
+            }
+          } catch (mergeErr) {
+            console.warn('[cloudSync] Achievement merge failed (non-fatal):', mergeErr);
+          }
+          await uploadCurrentStoreState(slotId);
+          safeToast('Merged cloud achievements; kept local resources.');
+          return { action: 'uploaded-local', localTimestamp, cloudTimestamp };
+        }
         hydrateStoreFromRestored(restored);
         safeToast('Cloud progress loaded.');
         return { action: 'downloaded-cloud', localTimestamp, cloudTimestamp };
@@ -146,7 +202,8 @@ function hydrateStoreFromRestored(restored: Awaited<ReturnType<typeof restoreAll
   const store = useGameStore.getState();
   const serialized: any = {
     version: '1.0.0',
-    timestamp: Date.now(),
+    // Preserve the timestamp from metadata to enable offline progress computation
+    timestamp: (restored as any)?.metadata?.timestamp ?? Date.now(),
     game: restored.gameState,
     resources: restored.resources,
     evolutions: Array.from(restored.evolutions.entries()),
@@ -160,6 +217,8 @@ function hydrateStoreFromRestored(restored: Awaited<ReturnType<typeof restoreAll
     gameMode: restored.extras?.gameMode,
     knightDashCooldown: restored.extras?.knightDashCooldown,
     manualModePieceStates: restored.extras?.manualModePieceStates,
+    // Include achievements snapshot so the store's deserialize path can restore them
+    achievements: restored.extras?.achievements || [],
   };
   store.deserialize(serialized);
   // Refresh compat cache
@@ -218,11 +277,48 @@ function computeProgressScore(data: any): number {
     const moves = (data.moveHistory && data.moveHistory.length) || 0;
     const playTime = data.soloModeStats?.totalPlayTime || 0;
     const unlocks = (data.unlockedEvolutions && data.unlockedEvolutions.length) || 0;
+    // Achievements weight – small influence to avoid overshadowing core progress
+    const achievements = Array.isArray(data.achievements) ? data.achievements : [];
+    const achievementCount = achievements.length;
+    const claimedCount = achievements.filter((a: any) => a && a.claimed).length;
     // Weight components (heuristic)
     return (
-      resourceSum + evoCount * 500 + moves * 2 + Math.floor(playTime / 1000) * 5 + unlocks * 800
+      resourceSum +
+      evoCount * 500 +
+      moves * 2 +
+      Math.floor(playTime / 1000) * 5 +
+      unlocks * 800 +
+      achievementCount * 30 +
+      claimedCount * 50
     );
   } catch {
     return 0;
+  }
+}
+
+// Determine if a snapshot is essentially empty/trivial for download decisions.
+// Note: Unlike SaveSystem’s overwrite guard, we IGNORE achievements here —
+// an achievements-only cloud snapshot is treated as trivial to avoid resetting
+// local resources; we’ll merge those achievements instead.
+function isTrivialSnapshot(data: any): boolean {
+  try {
+    const r = data.resources || {};
+    const allZeroResources = [
+      'temporalEssence',
+      'mnemonicDust',
+      'aetherShards',
+      'arcaneMana',
+    ].every(k => !r[k] || r[k] === 0);
+    const evoCount = (() => {
+      if (data.evolutions instanceof Map) return data.evolutions.size;
+      if (Array.isArray(data.evolutions)) return data.evolutions.length;
+      return 0;
+    })();
+    const moves = (data.moveHistory && data.moveHistory.length) || 0;
+    const playTime = data.soloModeStats?.totalPlayTime || 0;
+    const unlocks = (data.unlockedEvolutions && data.unlockedEvolutions.length) || 0;
+    return allZeroResources && evoCount === 0 && moves === 0 && playTime < 60_000 && unlocks === 0;
+  } catch {
+    return false;
   }
 }

@@ -54,6 +54,21 @@ export const MenuScene: React.FC<SceneProps> = ({ onSceneChange }) => {
       }
     };
     checkUser();
+
+    const onProfileUpdated = async () => {
+      try {
+        // Only refresh if a user is signed in
+        const currentUser = await getCurrentUser();
+        if (!currentUser) return;
+        const profile = await getCurrentUserProfile();
+        setUserProfile(profile);
+      } catch {}
+    };
+    window.addEventListener('profile:updated', onProfileUpdated);
+
+    return () => {
+      window.removeEventListener('profile:updated', onProfileUpdated);
+    };
   }, []);
 
   const handleDataRecovery = async () => {

@@ -49,6 +49,15 @@ export interface PieceAbility {
   description: string;
   cooldown?: number;
   lastUsed?: number;
+  // New: move-based cooldowns and usage limits for turn-based gating
+  // Number of global half-moves (plies) that must pass between uses
+  moveCooldown?: number;
+  // Maximum number of times this ability can be used by a given piece
+  maxUses?: number;
+  // Tracked number of uses by this specific piece
+  uses?: number;
+  // The global move index (plies) when the ability was last used
+  lastUsedMoveIndex?: number;
   conditions?: AbilityCondition[];
 }
 
@@ -101,6 +110,8 @@ export interface PieceEvolutionRef {
   isConsecratedSource?: boolean;
   isReceivingConsecration?: boolean;
   isDominated?: boolean;
+  // If true and modifiedMoves is set, only those moves are allowed (restriction)
+  isMoveRestricted?: boolean;
   canMoveThrough?: boolean;
 
   // Numerical bonuses

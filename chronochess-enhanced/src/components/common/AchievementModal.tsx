@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Modal from './Modal/Modal';
 import { setShowAchievement } from './achievementModalService';
 import { claimAchievement } from './achievementClaimService';
@@ -6,14 +6,43 @@ import type { Achievement } from '../../save/types';
 
 export const AchievementModalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [current, setCurrent] = useState<Achievement | null>(null);
+  const queueRef = useRef<Achievement[]>([]);
+
+  const showNextImmediate = useCallback(() => {
+    if (queueRef.current.length === 0) {
+      setCurrent(null);
+      return;
+    }
+    const next = queueRef.current.shift()!;
+    setCurrent(next);
+  }, []);
+
+  const pushAchievement = useCallback(
+    (achievement: Achievement) => {
+      // Always enqueue to avoid races with async state updates
+      if (!queueRef.current.some(a => a.id === achievement.id) && achievement.id !== current?.id) {
+        queueRef.current.push(achievement);
+      }
+      // If no modal is currently showing, immediately show the first item in the queue
+      if (!current) {
+        showNextImmediate();
+      }
+    },
+    [current, showNextImmediate]
+  );
+
+  const showNext = useCallback(() => {
+    showNextImmediate();
+  }, [showNextImmediate]);
 
   useEffect(() => {
     setShowAchievement((achievement: Achievement) => {
-      setCurrent(achievement);
+      // Route via queue manager to support multiple unlocks
+      pushAchievement(achievement);
     });
 
     return () => setShowAchievement(null);
-  }, []);
+  }, [pushAchievement]);
 
   return (
     <>
@@ -45,12 +74,12 @@ export const AchievementModalProvider: React.FC<{ children: React.ReactNode }> =
                 achievement={current}
                 onClaimed={() => {
                   // close modal after claiming
-                  setCurrent(null);
+                  showNext();
                 }}
               />
             ) : (
               <button
-                onClick={() => setCurrent(null)}
+                onClick={showNext}
                 style={{ padding: '8px 12px', borderRadius: 6, cursor: 'pointer' }}
               >
                 Close

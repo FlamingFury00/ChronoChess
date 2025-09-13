@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../../store';
 import ProgressBar from '../common/ProgressBar/ProgressBar';
+import { shouldResourceGenerationBeInStandby } from '../../lib/gameSystemsManager';
+import { DEFAULT_STANDBY_EFFICIENCY } from '../../resources/resourceConfig';
 import './ResourceDisplay.css';
 
 interface ResourceDisplayProps {
@@ -35,6 +37,9 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
     _resourcesRaw && typeof (_resourcesRaw as any).resources !== 'undefined'
       ? (_resourcesRaw as any).resources
       : (_resourcesRaw as any);
+
+  // Get current scene to determine generation efficiency
+  const currentScene = useGameStore(state => state.ui.currentScene);
   const [animations, setAnimations] = useState<ResourceAnimation[]>([]);
   // Keep a ref to the previous resources snapshot so updates here don't trigger
   // a rerender — using state for this was causing useEffect to re-run repeatedly.
@@ -181,7 +186,20 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
           const value = resources[resourceType as keyof typeof resources] as number;
           const generationRate = resources.generationRates?.[resourceType] || 0;
           const multiplier = resources.bonusMultipliers?.[resourceType] || 1;
-          const effectiveRate = generationRate * multiplier;
+
+          // Calculate effective rate based on current mode
+          let generationEfficiency = 1.0; // Default for active play
+
+          // Check if we're in standby mode (pre-game scenes)
+          const isInStandby = shouldResourceGenerationBeInStandby(currentScene, null);
+          if (isInStandby) {
+            generationEfficiency = DEFAULT_STANDBY_EFFICIENCY;
+          }
+
+          // Note: We don't show offline efficiency here since this is for the live display
+          // When user comes back from offline, they'll see the offline gains separately
+
+          const effectiveRate = generationRate * multiplier * generationEfficiency;
 
           return (
             <div
@@ -215,7 +233,7 @@ const ResourceDisplay: React.FC<ResourceDisplayProps> = ({
                 {showGenerationRates && effectiveRate > 0 && (
                   <span
                     className="resource-display__rate"
-                    title={`Generation rate: ${formatGenerationRate(effectiveRate)} per second${multiplier > 1 ? ` (${multiplier}x multiplier)` : ''}`}
+                    title={`Generation rate: ${formatGenerationRate(effectiveRate)} per second${multiplier > 1 ? ` (${multiplier}x multiplier)` : ''}${isInStandby ? ' (Standby Mode - 25% efficiency)' : ''}`}
                   >
                     {formatGenerationRate(effectiveRate)}
                   </span>

@@ -4,6 +4,11 @@ import type { SaveDatabase } from './types';
  * IndexedDB wrapper for ChronoChess save system
  * Provides a clean interface for storing large save data with versioning support
  */
+
+// Shared in-memory stores for when IndexedDB is not available
+// This ensures data persists across multiple wrapper instances
+const sharedMemoryStores = new Map<string, Map<string, Map<string, any>>>();
+
 export class IndexedDBWrapper {
   private db: IDBDatabase | null = null;
   // In-memory fallback for environments without IndexedDB (tests/node)
@@ -58,11 +63,18 @@ export class IndexedDBWrapper {
           return;
         }
 
-        // Fallback: initialize simple in-memory stores so tests can run
-        // in Node environments where IndexedDB is not available.
+        // Fallback: use shared in-memory stores so data persists across
+        // multiple wrapper instances in test environments
         console.warn('IndexedDB not supported - using in-memory fallback for tests');
-        this.memoryStores = new Map();
-        this.stores.forEach(storeName => this.memoryStores!.set(storeName as string, new Map()));
+
+        // Get or create shared memory stores for this database name
+        if (!sharedMemoryStores.has(this.dbName)) {
+          const stores = new Map<string, Map<string, any>>();
+          this.stores.forEach(storeName => stores.set(storeName as string, new Map()));
+          sharedMemoryStores.set(this.dbName, stores);
+        }
+
+        this.memoryStores = sharedMemoryStores.get(this.dbName)!;
         resolve();
         return;
       }
@@ -91,6 +103,10 @@ export class IndexedDBWrapper {
       request.onupgradeneeded = (event: any) => {
         console.log(`🔄 IndexedDB upgrade needed: from ${event.oldVersion} to ${event.newVersion}`);
         const db = (event.target as IDBOpenDBRequest).result;
+        const transaction = event.target.transaction;
+
+        // Handle data migration from previous versions
+        this.handleDataMigration(db, transaction, event.oldVersion, event.newVersion);
 
         // Create object stores if they don't exist
         this.stores.forEach(storeName => {
@@ -194,8 +210,8 @@ export class IndexedDBWrapper {
       const store = this.memoryStores.get(storeName as string)!;
       const result = store.get(id) || null;
       if (result) {
-        const { id: _, ...data } = result;
-        return data as SaveDatabase[T];
+        // Return the full data including the id field for achievement objects
+        return result as SaveDatabase[T];
       }
       return null;
     }
@@ -216,9 +232,9 @@ export class IndexedDBWrapper {
       request.onsuccess = () => {
         const result = request.result;
         if (result) {
-          // Remove the id field that was added for IndexedDB
-          const { id: _, ...data } = result;
-          resolve(data as SaveDatabase[T]);
+          // Return the full data including the id field for achievement objects
+          // The id field is needed for proper achievement identification
+          resolve(result as SaveDatabase[T]);
         } else {
           resolve(null);
         }
@@ -498,9 +514,35 @@ export class IndexedDBWrapper {
       isReady: this.isReady(),
     };
   }
+
+  /**
+   * Handle data migration between IndexedDB versions
+   */
+  private handleDataMigration(
+    _db: IDBDatabase,
+    _transaction: IDBTransaction,
+    oldVersion: number,
+    newVersion: number
+  ): void {
+    console.log(`🔄 Migrating data from version ${oldVersion} to ${newVersion}`);
+
+    // Migration from version 1 to 2: Preserve all existing data
+    if (oldVersion === 1 && newVersion >= 2) {
+      console.log('📦 Migrating from v1 to v2: Preserving existing achievement data');
+
+      // The main issue was that achievements store was added in v2 but data wasn't migrated
+      // Since achievements store didn't exist in v1, we don't need to migrate achievements data
+      // The new achievements store will be created fresh
+
+      // All other stores (saves, metadata, backups, settings) should be preserved automatically
+      // by IndexedDB during the upgrade process
+    }
+
+    // Add future migrations here as needed
+    // if (oldVersion === 2 && newVersion >= 3) { ... }
+  }
 }
 
-// Singleton instance for global use
 // Export a shared database wrapper that allows an in-memory fallback. Tests
 // which need a hard failure can instantiate `new IndexedDBWrapper()` themselves
 // without the fallback flag.

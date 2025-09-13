@@ -4,6 +4,7 @@ import {
   DEFAULT_GENERATION_RATES,
   DEFAULT_BONUS_MULTIPLIERS,
   DEFAULT_OFFLINE_EFFICIENCY,
+  DEFAULT_STANDBY_EFFICIENCY,
 } from '../resourceConfig';
 import type { ResourceCost, ResourceGains, GenerationBonus } from '../types';
 
@@ -186,6 +187,51 @@ describe('ResourceManager', () => {
 
       const ratePerSecond = resourceManager.getGenerationRatePerSecond('temporalEssence');
       expect(ratePerSecond).toBeCloseTo(2 * (DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 3));
+    });
+  });
+
+  describe('Standby Mode', () => {
+    it('should apply standby efficiency when in standby mode', () => {
+      resourceManager.setStandbyMode(true);
+
+      // Simulate time passage with standby efficiency
+      const gains = resourceManager.simulateTimePassage(60); // 1 minute
+
+      const expectedTEGain =
+        DEFAULT_GENERATION_RATES.temporalEssence *
+        DEFAULT_BONUS_MULTIPLIERS.temporalEssence *
+        60 *
+        DEFAULT_STANDBY_EFFICIENCY;
+
+      expect(gains.temporalEssence).toBeCloseTo(expectedTEGain);
+    });
+
+    it('should apply full efficiency when not in standby mode', () => {
+      resourceManager.setStandbyMode(false);
+
+      // Simulate time passage with full efficiency
+      const gains = resourceManager.simulateTimePassage(60); // 1 minute
+
+      const expectedTEGain =
+        DEFAULT_GENERATION_RATES.temporalEssence * DEFAULT_BONUS_MULTIPLIERS.temporalEssence * 60; // No standby penalty
+
+      expect(gains.temporalEssence).toBeCloseTo(expectedTEGain);
+    });
+
+    it('should demonstrate reduced resources in standby vs active play', () => {
+      // First, measure active play (standby = false)
+      resourceManager.setStandbyMode(false);
+      const activeGains = resourceManager.simulateTimePassage(60);
+
+      // Then, measure standby mode (standby = true)
+      resourceManager.setStandbyMode(true);
+      const standbyGains = resourceManager.simulateTimePassage(60);
+
+      // Standby should give significantly less resources than active play
+      expect(standbyGains.temporalEssence || 0).toBeLessThan(activeGains.temporalEssence || 0);
+      expect(standbyGains.temporalEssence || 0).toBeCloseTo(
+        (activeGains.temporalEssence || 0) * DEFAULT_STANDBY_EFFICIENCY
+      );
     });
   });
 

@@ -12,12 +12,16 @@ import type { SceneProps } from '../types';
 import type { ProfileFormData } from '../../lib/authValidation';
 import type { UserProfile } from '../../lib/profileService';
 import './ProfileScene.css';
+import { useGameStore } from '../../store/gameStore';
+import { ProgressBar } from '../../components/common';
+import { getLevelProgress, LEVEL_CAP } from '../../lib/leveling';
 
 export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [message, setMessage] = useState<string>('');
+  const soloStats = useGameStore(s => s.soloModeStats);
 
   const {
     control,
@@ -57,6 +61,17 @@ export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     };
 
     fetchProfile();
+    const onProfileUpdated = async () => {
+      try {
+        const profile = await getCurrentUserProfile();
+        if (profile) setUserProfile(profile);
+      } catch {}
+    };
+    window.addEventListener('profile:updated', onProfileUpdated);
+
+    return () => {
+      window.removeEventListener('profile:updated', onProfileUpdated);
+    };
   }, [reset]);
 
   const checkUsernameAvailabilityDebounced = async (username: string) => {
@@ -180,7 +195,57 @@ export const ProfileScene: React.FC<SceneProps> = ({ onSceneChange }) => {
                   {new Date(userProfile.created_at).toLocaleDateString()}
                 </span>
               </div>
+              {soloStats && (
+                <>
+                  <div className="profile-scene__stat-item">
+                    <span className="profile-scene__stat-label">Current Streak</span>
+                    <span className="profile-scene__stat-value">{soloStats.currentWinStreak}</span>
+                  </div>
+                  <div className="profile-scene__stat-item">
+                    <span className="profile-scene__stat-label">Best Streak</span>
+                    <span className="profile-scene__stat-value">{soloStats.bestWinStreak}</span>
+                  </div>
+                  <div className="profile-scene__stat-item">
+                    <span className="profile-scene__stat-label">Solo Wins</span>
+                    <span className="profile-scene__stat-value">{soloStats.encountersWon}</span>
+                  </div>
+                  <div className="profile-scene__stat-item">
+                    <span className="profile-scene__stat-label">Solo Losses</span>
+                    <span className="profile-scene__stat-value">{soloStats.encountersLost}</span>
+                  </div>
+                  <div className="profile-scene__stat-item">
+                    <span className="profile-scene__stat-label">Total Encounters</span>
+                    <span className="profile-scene__stat-value">{soloStats.totalEncounters}</span>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* XP Progress to next level (exponential curve) */}
+            {(() => {
+              const totalXP = userProfile.experience_points || 0;
+              const prog = getLevelProgress(totalXP);
+              const isMaxLevel = (userProfile.level ?? 1) >= LEVEL_CAP;
+              const nextLevel = Math.min(LEVEL_CAP, (userProfile.level || 1) + 1);
+              const label = isMaxLevel ? 'Max Level' : `XP to Level ${nextLevel}`;
+              const remaining = Math.max(
+                0,
+                (prog.required || 0) - (isMaxLevel ? prog.required : prog.current)
+              );
+              return (
+                <div className="profile-scene__xp-progress" style={{ marginTop: 16 }}>
+                  <ProgressBar
+                    value={isMaxLevel ? prog.required : prog.current}
+                    max={prog.required || 1}
+                    label={label}
+                    variant="success"
+                    size="large"
+                    animated={!isMaxLevel}
+                    formatValue={(v, m) => `${v} / ${m} (${remaining} to next)`}
+                  />
+                </div>
+              );
+            })()}
           </div>
 
           <form

@@ -11,7 +11,8 @@ export const DEFAULT_BONUS_MULTIPLIERS = {
   arcaneMana: 1.01,
 } as const;
 
-export const DEFAULT_OFFLINE_EFFICIENCY = 0.2;
+export const DEFAULT_OFFLINE_EFFICIENCY = 0.1; // 10% when completely offline
+export const DEFAULT_STANDBY_EFFICIENCY = 0.25; // 25% when app is open but in pre-game scenes
 export const DEFAULT_MAX_OFFLINE_HOURS = 24;
 export const DEFAULT_GENERATION_TICK_RATE = 1000; // ms
 

@@ -17,6 +17,13 @@ export const LandingScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     checkUser();
   }, []);
 
+  // If a user is already authenticated, skip the landing and go straight to the menu
+  useEffect(() => {
+    if (user) {
+      onSceneChange('menu');
+    }
+  }, [user, onSceneChange]);
+
   return (
     <div className="landing-scene scene">
       <div className="landing-scene__background">

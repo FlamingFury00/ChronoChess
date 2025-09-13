@@ -1,4 +1,4 @@
-import { useGameStore } from './gameStore';
+import { useGameStore, resourceManager } from './gameStore';
 import { simpleSoundPlayer } from '../audio/SimpleSoundPlayer';
 import { progressTracker } from '../save/ProgressTracker';
 import { getSupabaseClient, isCloudConfigured } from '../lib/supabaseClient';
@@ -6,7 +6,10 @@ import { ensureSaveSystemInitialized } from './saveAdapter';
 import { removeSlot } from './saveAdapter';
 import type { SceneType } from '../scenes/types';
 import type { User } from '@supabase/supabase-js';
-import { shouldGameSystemsBeActive } from '../lib/gameSystemsManager';
+import {
+  shouldGameSystemsBeActive,
+  shouldResourceGenerationBeInStandby,
+} from '../lib/gameSystemsManager';
 import { syncGuestProgressToCloud } from '../lib/cloudSyncManager';
 
 // Handlers stored for cleanup
@@ -17,20 +20,23 @@ let _hiddenStartTs: number | null = null;
 
 // Track initialization state to avoid duplicate initialization
 let isGameSystemsInitialized = false;
+let isGameSystemsInitializing = false; // prevents concurrent init in StrictMode
 let isBasicSystemsInitialized = false;
+let isBasicSystemsInitializing = false; // prevents concurrent init in StrictMode
 
 /**
  * Initialize basic systems that should always be available (save system, audio)
  * This is called once when the app starts, regardless of scene or auth status
  */
 export async function initializeBasicSystems(): Promise<void> {
-  if (isBasicSystemsInitialized) {
+  if (isBasicSystemsInitialized || isBasicSystemsInitializing) {
     return;
   }
 
   console.log('🚀 Initializing basic ChronoChess systems...');
 
   try {
+    isBasicSystemsInitializing = true;
     // Initialize SaveSystem early (local IndexedDB + cloud wiring)
     try {
       await ensureSaveSystemInitialized();
@@ -70,6 +76,8 @@ export async function initializeBasicSystems(): Promise<void> {
   } catch (error) {
     console.error('❌ Error during basic systems initialization:', error);
     throw error;
+  } finally {
+    isBasicSystemsInitializing = false;
   }
 }
 
@@ -78,7 +86,7 @@ export async function initializeBasicSystems(): Promise<void> {
  * This should only be called when the user is in a game scene
  */
 export async function initializeGameSystems(): Promise<void> {
-  if (isGameSystemsInitialized) {
+  if (isGameSystemsInitialized || isGameSystemsInitializing) {
     return;
   }
 
@@ -87,6 +95,7 @@ export async function initializeGameSystems(): Promise<void> {
   const store = useGameStore.getState();
 
   try {
+    isGameSystemsInitializing = true;
     // Ensure basic systems are initialized first
     await initializeBasicSystems();
 
@@ -151,13 +160,27 @@ export async function initializeGameSystems(): Promise<void> {
 
     if (loadSuccess) {
       console.log('✅ Saved game data loaded successfully');
+
+      // CRITICAL FIX: Ensure ResourceManager is properly synchronized after data loading
+      try {
+        const currentResources = store.resources;
+        resourceManager.setResourceState(currentResources);
+        console.log('🔧 ResourceManager state synchronized after data load:', {
+          temporalEssence: currentResources.temporalEssence,
+          mnemonicDust: currentResources.mnemonicDust,
+          aetherShards: currentResources.aetherShards,
+          arcaneMana: currentResources.arcaneMana,
+        });
+      } catch (err) {
+        console.warn('Failed to sync ResourceManager after data load:', err);
+      }
     } else {
       console.log('ℹ️ No saved game data found, starting fresh');
     }
 
-    // Start resource generation
-    console.log('⚡ Starting resource generation...');
-    store.startResourceGeneration();
+    // Start resource generation with appropriate mode for current scene
+    const currentScene = store.ui.currentScene;
+    initializeResourceGeneration(currentScene, null); // user will be determined later
 
     // Enable auto-save if configured (after loading to respect saved settings)
     // Only enable auto-save when game systems are fully active
@@ -194,12 +217,15 @@ export async function initializeGameSystems(): Promise<void> {
 
     // Try to start basic resource generation even if other systems fail
     try {
-      store.startResourceGeneration();
+      const currentScene = store.ui.currentScene;
+      initializeResourceGeneration(currentScene, null);
     } catch (resourceError) {
       console.error('❌ Failed to start resource generation:', resourceError);
     }
 
     throw error;
+  } finally {
+    isGameSystemsInitializing = false;
   }
 }
 
@@ -262,6 +288,35 @@ function setupLifecycleHooks(): void {
 }
 
 /**
+ * Update resource generation mode based on current scene
+ */
+export function updateResourceGenerationMode(currentScene: SceneType, user: User | null): void {
+  const store = useGameStore.getState();
+  const shouldBeInStandby = shouldResourceGenerationBeInStandby(currentScene, user);
+
+  console.log(
+    `🔄 Setting resource generation standby mode: ${shouldBeInStandby} (scene: ${currentScene})`
+  );
+  store.setResourceGenerationStandby(shouldBeInStandby);
+}
+
+/**
+ * Initialize and start resource generation with proper mode for current scene
+ */
+export function initializeResourceGeneration(currentScene: SceneType, user: User | null): void {
+  const store = useGameStore.getState();
+
+  // Always start resource generation (with built-in duplicate prevention)
+  console.log('⚡ Starting resource generation...');
+  store.startResourceGeneration();
+
+  // Set the appropriate generation mode based on scene
+  updateResourceGenerationMode(currentScene, user);
+
+  console.log('✅ Resource generation initialized for scene:', currentScene);
+}
+
+/**
  * Conditionally initialize game systems based on scene and authentication
  */
 export async function initializeGameSystemsConditionally(
@@ -277,7 +332,31 @@ export async function initializeGameSystemsConditionally(
 }
 
 /**
+ * Switch to standby mode when transitioning to pre-game scenes
+ */
+export function switchToStandbyMode(): void {
+  console.log('🔄 Switching to standby mode...');
+  const store = useGameStore.getState();
+
+  try {
+    // Switch resource generation to standby mode (reduced efficiency)
+    store.setResourceGenerationStandby(true);
+
+    // Disable auto-save
+    store.disableAutoSave();
+
+    // Save current state before switching modes
+    store.saveToStorage();
+
+    console.log('✅ Switched to standby mode');
+  } catch (error) {
+    console.error('❌ Error switching to standby mode:', error);
+  }
+}
+
+/**
  * Stop game systems when transitioning to pre-game scenes
+ * @deprecated Use switchToStandbyMode instead to keep resources generating
  */
 export function stopGameSystems(): void {
   if (!isGameSystemsInitialized) {
@@ -308,7 +387,9 @@ export function stopGameSystems(): void {
  */
 export function resetInitializationState(): void {
   isGameSystemsInitialized = false;
+  isGameSystemsInitializing = false;
   isBasicSystemsInitialized = false;
+  isBasicSystemsInitializing = false;
 }
 
 /**

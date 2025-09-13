@@ -47,4 +47,47 @@ describe('AchievementModalProvider', () => {
     // ensure claimAchievement was called
     expect(claimAchievement).toHaveBeenCalled();
   });
+
+  it('queues multiple achievements and shows sequentially', async () => {
+    const { getByText, queryByText } = render(
+      <AchievementModalProvider>
+        <div />
+      </AchievementModalProvider>
+    );
+
+    const ach1: any = {
+      id: 'a1',
+      name: 'First',
+      description: 'First Desc',
+      rarity: 'common',
+      unlockedTimestamp: Date.now(),
+      reward: { aetherShards: 5 },
+    };
+    const ach2: any = {
+      id: 'a2',
+      name: 'Second',
+      description: 'Second Desc',
+      rarity: 'rare',
+      unlockedTimestamp: Date.now(),
+      reward: { aetherShards: 15 },
+    };
+
+    // Fire two unlocks back-to-back
+    showAchievement(ach1);
+    showAchievement(ach2);
+
+    // First should be visible (by its claim button)
+    await waitFor(() => {
+      expect(getByText(/Claim 5 AS/i)).toBeTruthy();
+      expect(queryByText(/Claim 15 AS/i)).toBeNull();
+    });
+
+    // Claim first -> should advance to second (with its claim button)
+    const firstClaim = getByText(/Claim 5 AS/i);
+    firstClaim.click();
+
+    await waitFor(() => {
+      expect(getByText(/Claim 15 AS/i)).toBeTruthy();
+    });
+  });
 });

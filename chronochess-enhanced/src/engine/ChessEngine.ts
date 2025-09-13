@@ -149,6 +149,23 @@ export class ChessEngine {
               } catch (err) {
                 console.warn('🔧 Failed to update piece capabilities after standard move:', err);
               }
+
+              // If a pawn performed a normal two-step from its starting rank and has enhanced-march,
+              // treat this as consuming one use so later extra two-step generation is gated.
+              try {
+                const movedPiece = this.chess.get(to as any);
+                if (movedPiece?.type === 'p' && chessMove?.flags?.includes('b')) {
+                  const evoAtDest = this.pieceEvolutions.get(to);
+                  const march = evoAtDest?.abilities.find(a => a.id === 'enhanced-march');
+                  if (march && typeof march.maxUses === 'number') {
+                    march.uses = (march.uses || 0) + 1;
+                    march.lastUsedMoveIndex = this.moveHistory.length;
+                    console.log('🧭 Consumed implicit Enhanced March use due to 2-step push');
+                  }
+                }
+              } catch (err) {
+                console.warn('🔧 Failed to mark implicit enhanced-march use:', err);
+              }
             }
           }
         } catch (err) {
@@ -624,45 +641,43 @@ export class ChessEngine {
       abilities.map(a => a.id)
     );
 
-    // Check each ability
+    // Check each ability with availability via canUseAbility
     for (const ability of abilities) {
       switch (ability.id) {
-        case 'enhanced-march':
-          // Enhanced march allows moving 2 squares forward from any position
-          if (rankDiff === direction * 2 && fileDiff === 0) {
-            console.log(`✅ Enhanced march move validated`);
+        case 'enhanced-march': {
+          // Only valid if ability available and it's exactly a 2-forward push
+          const available = this.canUseAbility(ability, { from, to });
+          if (available && rankDiff === direction * 2 && fileDiff === 0) {
+            console.log(`✅ Enhanced march move validated (gated)`);
             return true;
           }
           break;
-        case 'breakthrough':
-          // Breakthrough allows diagonal moves without capture, or moving through pieces
+        }
+        case 'breakthrough': {
+          // Valid if available and either diagonal sidestep or forward capture
+          const available = this.canUseAbility(ability, { from, to });
+          if (!available) break;
           if (rankDiff === direction && fileDiff === 1) {
-            console.log(`✅ Breakthrough diagonal move validated`);
+            console.log(`✅ Breakthrough diagonal move validated (gated)`);
             return true;
           }
-          // Also allow forward moves through pieces
           if (rankDiff === direction && fileDiff === 0) {
-            console.log(`✅ Breakthrough forward move validated`);
+            const target = this.chess.get(to as any);
+            if (target && target.color !== color) {
+              console.log(`✅ Breakthrough forward capture validated (gated)`);
+              return true;
+            }
+          }
+          break;
+        }
+        case 'diagonal-move': {
+          const available = this.canUseAbility(ability, { from, to });
+          if (available && rankDiff === direction && fileDiff === 1) {
+            console.log(`✅ Diagonal move validated (gated)`);
             return true;
           }
           break;
-        case 'diagonal-move':
-          // Diagonal move ability allows diagonal movement without capture
-          if (rankDiff === direction && fileDiff === 1) {
-            console.log(`✅ Diagonal move validated`);
-            return true;
-          }
-          break;
-      }
-    }
-
-    // For the specific case from logs: d2->e4 should be valid with breakthrough
-    // This is a 2-square diagonal move
-    if (rankDiff === direction * 2 && fileDiff === 1) {
-      const hasBreakthrough = abilities.some(a => a.id === 'breakthrough');
-      if (hasBreakthrough) {
-        console.log(`✅ Extended breakthrough move validated (2 squares diagonal)`);
-        return true;
+        }
       }
     }
 
@@ -841,7 +856,7 @@ export class ChessEngine {
         case 'dash':
         case 'knight-dash':
           // **ENHANCED: Dash allows more flexible moves when activated**
-          const isDashActive = gameStore.pendingPlayerDashMove === from;
+          const isDashActive = !!(gameStore && gameStore.pendingPlayerDashMove === from);
           if (isDashActive || isExtendedLMove || isLMove) {
             console.log(`✅ Knight dash move validated (dash active: ${isDashActive})`);
             return true;
@@ -863,7 +878,7 @@ export class ChessEngine {
     }
 
     // Legacy dash check
-    if (gameStore.pendingPlayerDashMove === from) {
+    if (gameStore && gameStore.pendingPlayerDashMove === from) {
       console.log(`✅ Legacy knight dash move validated`);
       return true;
     }
@@ -1612,6 +1627,19 @@ export class ChessEngine {
             });
           }
 
+          // FINAL GUARD: Filter abilities so only those backed by active store evolutions remain.
+          // This prevents enhanced moves from appearing unless the corresponding evolution is truly active.
+          try {
+            const storeEvos = gameStore?.pieceEvolutions as any;
+            if (storeEvos) {
+              abilities = abilities.filter(ability =>
+                this.isAbilityActiveForPiece(ability.id, piece.type as PieceType, storeEvos)
+              );
+            }
+          } catch {
+            // If store isn't available, keep abilities as-is (tests or non-store contexts)
+          }
+
           // Create piece evolution reference
           const pieceEvolution: PieceEvolutionRef = {
             pieceType: piece.type,
@@ -1644,6 +1672,81 @@ export class ChessEngine {
 
     // Recalculate all piece capabilities
     this.updatePieceCapabilities();
+  }
+
+  /**
+   * Gating: determine if an ability is active for a piece given the store's evolution state.
+   * If no store is provided, return true (non-store/test contexts should trust provided abilities).
+   */
+  private isAbilityActiveForPiece(
+    abilityId: string,
+    pieceType: PieceType,
+    storeEvos?: any
+  ): boolean {
+    if (!storeEvos) return true;
+    const id = String(abilityId || '').toLowerCase();
+    switch (id) {
+      // Pawn
+      case 'enhanced-march':
+        return !!(storeEvos.pawn && (storeEvos.pawn.marchSpeed || 1) > 1);
+      case 'breakthrough':
+      case 'diagonal-move':
+      case 'phase-through':
+        return !!(storeEvos.pawn && (storeEvos.pawn.resilience || 0) > 0);
+
+      // Knight
+      case 'knight-dash':
+      case 'dash': {
+        // Use configured default dash chance for comparison
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { DEFAULT_DASH_CHANCE } = require('../resources/resourceConfig');
+          return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE);
+        } catch {
+          return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
+        }
+      }
+
+      // Bishop
+      case 'bishop-consecrate':
+      case 'consecration':
+        return !!(storeEvos.bishop && (storeEvos.bishop.consecrationTurns || 3) < 3);
+
+      // Rook
+      case 'rook-entrench':
+      case 'entrenchment':
+        return !!(storeEvos.rook && (storeEvos.rook.entrenchThreshold || 3) < 3);
+
+      // Queen
+      case 'queen-dominance':
+      case 'dominance':
+        return !!(storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1);
+
+      // King
+      case 'royal-decree':
+        return !!(storeEvos.king && (storeEvos.king.royalDecreeUses || 0) > 0);
+      case 'last-stand':
+        return !!(storeEvos.king && (storeEvos.king.lastStandThreshold || 0.2) > 0.2);
+
+      // Movement range extenders: gate per type
+      case 'extended-range':
+      case 'zone-control':
+      case 'battlefield-command':
+      case 'divine-authority':
+        if (pieceType === 'b')
+          return !!(storeEvos.bishop && (storeEvos.bishop.snipeRange || 1) > 1);
+        if (pieceType === 'r') return !!(storeEvos.rook && (storeEvos.rook.entrenchPower || 1) > 1);
+        if (pieceType === 'q')
+          return !!(storeEvos.queen && (storeEvos.queen.dominanceAuraRange || 1) > 1);
+        if (pieceType === 'n')
+          return !!(storeEvos.knight && (storeEvos.knight.dashChance || 0) > 0.1);
+        return false;
+
+      // Pure passives or specials that don't add moves directly can be allowed,
+      // but to be safe (prevent phantom effects), default to false unless known.
+      default:
+        return false;
+    }
   }
 
   private analyzeEleganceFactors(move: Move): EleganceFactors {
@@ -1803,6 +1906,25 @@ export class ChessEngine {
       }
     }
 
+    // Move-based cooldown/usage gating (turn/ply based rather than time)
+    if (typeof ability.maxUses === 'number' && ability.maxUses >= 0) {
+      const used = ability.uses || 0;
+      if (used >= ability.maxUses) {
+        console.log(`🚫 Ability ${ability.name} exceeded max uses (${ability.maxUses})`);
+        return false;
+      }
+    }
+
+    if (typeof ability.moveCooldown === 'number' && ability.moveCooldown > 0) {
+      const lastIdx = ability.lastUsedMoveIndex ?? -Infinity;
+      const currentIdx = this.moveHistory.length; // half-moves (plies)
+      if (currentIdx - lastIdx < ability.moveCooldown) {
+        const remaining = ability.moveCooldown - (currentIdx - lastIdx);
+        console.log(`⏳ Ability ${ability.name} move-cooldown: ${remaining} plies remaining`);
+        return false;
+      }
+    }
+
     // **ENHANCED: More thorough condition evaluation**
     if (ability.conditions && ability.conditions.length > 0) {
       for (const condition of ability.conditions) {
@@ -1823,22 +1945,51 @@ export class ChessEngine {
     return true;
   }
 
+  // Lightweight availability check for move generation phase (no target-specific validation)
+  private isAbilityAvailableForGeneration(ability: PieceAbility): boolean {
+    if (typeof ability.maxUses === 'number' && ability.maxUses >= 0) {
+      const used = ability.uses || 0;
+      if (used >= ability.maxUses) return false;
+    }
+    if (typeof ability.moveCooldown === 'number' && ability.moveCooldown > 0) {
+      const lastIdx = ability.lastUsedMoveIndex ?? -Infinity;
+      const currentIdx = this.moveHistory.length;
+      if (currentIdx - lastIdx < ability.moveCooldown) return false;
+    }
+    return true;
+  }
+
   private executeAbility(ability: PieceAbility, move: Move): AbilityResult {
+    // If an ability arrives without an explicit type (some tests provide only id/name),
+    // infer a sensible default so execution doesn't fall through as "Unknown ability type".
+    if (!ability.type) {
+      ability.type = this.inferAbilityType(ability.id);
+    }
     // **ENHANCED: Mark ability as used with proper cooldown tracking**
     const abilityUsedTime = Date.now();
     ability.lastUsed = abilityUsedTime;
+    // Track move-index usage for move-based cooldowns
+    ability.lastUsedMoveIndex = this.moveHistory.length;
+    if (typeof ability.uses === 'number') {
+      ability.uses += 1;
+    } else {
+      ability.uses = 1;
+    }
 
     console.log(
       `⚡ Executing ability: ${ability.name} at ${new Date(abilityUsedTime).toISOString()}`
     );
 
     // **ENHANCED: Store cooldown information for tracking**
-    const pieceEvolution = this.pieceEvolutions.get(move.from);
+    const pieceEvolution = this.pieceEvolutions.get(move.from) || this.pieceEvolutions.get(move.to);
     if (pieceEvolution) {
       // Update the ability reference in the evolution to persist cooldown
       const abilityIndex = pieceEvolution.abilities.findIndex(a => a.id === ability.id);
       if (abilityIndex !== -1) {
-        pieceEvolution.abilities[abilityIndex].lastUsed = abilityUsedTime;
+        const ref = pieceEvolution.abilities[abilityIndex];
+        ref.lastUsed = abilityUsedTime;
+        ref.lastUsedMoveIndex = ability.lastUsedMoveIndex;
+        ref.uses = ability.uses;
       }
     }
 
@@ -1877,11 +2028,37 @@ export class ChessEngine {
     return result;
   }
 
+  // Best-effort ability type inference used when ability.type is missing
+  private inferAbilityType(id: string): PieceAbility['type'] {
+    const movementIds = new Set([
+      'enhanced-march',
+      'breakthrough',
+      'extended-range',
+      'phase-through',
+      'pawn-advance',
+      'diagonal-move',
+      'knight-leap',
+    ]);
+    const passiveIds = new Set([
+      'protective-aura',
+      'immobilize-resist',
+      'resilient-stance',
+      'enhanced-vision',
+      'command-aura',
+      'predict-moves',
+    ]);
+
+    if (movementIds.has(id)) return 'movement';
+    if (passiveIds.has(id)) return 'passive';
+    // Default most others to special; capture-only ids would be rare in current system
+    return 'special';
+  }
+
   private executeMovementAbility(ability: PieceAbility, move: Move): AbilityResult {
     const extraMoves = this.calculateExtraMoves(ability, move);
 
     // Apply movement modifications to the piece
-    const pieceEvolution = this.pieceEvolutions.get(move.from);
+    const pieceEvolution = this.pieceEvolutions.get(move.from) || this.pieceEvolutions.get(move.to);
     if (pieceEvolution) {
       // Grant actual additional movement options
       const enhancedMoves = this.generateEnhancedMovesForAbility(move.from, ability);
@@ -1938,6 +2115,10 @@ export class ChessEngine {
         return this.executeBishopConsecration(move, ability);
       case 'queen-dominance':
         return this.executeQueenDominance(move, ability);
+      case 'royal-decree':
+        return this.executeRoyalDecree(move, ability);
+      case 'last-stand':
+        return this.executeLastStand(move, ability);
       case 'teleport':
         return this.executeTeleportAbility(move, ability);
       case 'breakthrough':
@@ -2487,7 +2668,8 @@ export class ChessEngine {
    * Check if an ability can target a specific move
    */
   private isValidAbilityTarget(ability: PieceAbility, move: Move): boolean {
-    const piece = this.chess.get(move.from as any);
+    // After standard moves, move.from is empty; prefer piece at destination if source is empty.
+    const piece = this.chess.get(move.from as any) || this.chess.get(move.to as any);
     const targetPiece = this.chess.get(move.to as any);
 
     switch (ability.type) {
@@ -2503,11 +2685,9 @@ export class ChessEngine {
         break;
 
       case 'movement':
-        // Movement abilities require empty target square or valid capture
-        if (targetPiece && piece && targetPiece.color === piece.color) {
-          return false; // Can't move to square occupied by own piece
-        }
-        break;
+        // Movement abilities augment already-legal moves; don't reject based on
+        // current board occupancy (the mover now sits on move.to).
+        return true;
 
       case 'special':
         // Special abilities have custom validation
@@ -2524,6 +2704,10 @@ export class ChessEngine {
           case 'queen-dominance':
             // Queen dominance requires queen piece
             return piece?.type === 'q';
+          case 'royal-decree':
+          case 'last-stand':
+            // King specials require king piece
+            return piece?.type === 'k';
         }
         break;
     }
@@ -2618,10 +2802,30 @@ export class ChessEngine {
     const piece = this.chess.get(square as any);
     if (!piece) return moves;
 
-    const enhancedMoves = [...moves];
+    let enhancedMoves = [...moves];
 
-    // Apply abilities to generate additional moves
+    // If this piece is currently restricted (e.g., dominated/decreed), limit to its modifiedMoves
+    if (evolution.isMoveRestricted && Array.isArray(evolution.modifiedMoves)) {
+      const allowed = new Set(evolution.modifiedMoves);
+      enhancedMoves = enhancedMoves.filter(m => allowed.has(m.to));
+    }
+
+    // Apply abilities to generate additional moves (with gating safety)
     for (const ability of evolution.abilities || []) {
+      try {
+        const gameStore = (globalThis as any).chronoChessStore;
+        const pieceType = piece.type as PieceType;
+        if (
+          gameStore &&
+          gameStore.pieceEvolutions &&
+          !this.isAbilityActiveForPiece(ability.id, pieceType, gameStore.pieceEvolutions)
+        ) {
+          // Skip abilities not active per store gating
+          continue;
+        }
+      } catch {
+        // No store available — proceed
+      }
       const additionalMoves = this.generateMovesFromAbility(square, ability, piece.type);
 
       // Filter and add valid additional moves
@@ -2652,7 +2856,11 @@ export class ChessEngine {
     }
 
     // Also include any modifiedMoves that were precomputed on the evolution
-    if (Array.isArray(evolution.modifiedMoves) && evolution.modifiedMoves.length > 0) {
+    if (
+      Array.isArray(evolution.modifiedMoves) &&
+      evolution.modifiedMoves.length > 0 &&
+      !evolution.isMoveRestricted
+    ) {
       for (const additionalMove of evolution.modifiedMoves) {
         if (!enhancedMoves.some(m => m.to === additionalMove)) {
           if (this.isValidDestination(additionalMove, piece.color)) {
@@ -3088,6 +3296,16 @@ export class ChessEngine {
     };
 
     switch (ability.id) {
+      case 'royal-decree':
+        effect.radius = 2;
+        effect.alliesEmpowered = true;
+        effect.enemiesRestricted = true;
+        break;
+      case 'last-stand':
+        effect.defenseBoost = 2.0;
+        effect.radius = 1;
+        effect.underDuress = true;
+        break;
       case 'knight-dash':
         effect.dashDistance = 2;
         effect.canJumpOverPieces = true;
@@ -3202,6 +3420,34 @@ export class ChessEngine {
     }
 
     return effect;
+  }
+
+  /**
+   * Get lightly restricted moves for enemies affected by Royal Decree
+   * (less severe than queen dominance)
+   */
+  private getRestrictedMovesForDecree(enemySquare: Square): Square[] {
+    const standardMoves = this.getLegalMoves(enemySquare);
+
+    if (!standardMoves || standardMoves.length === 0) return [];
+
+    // Decree: allow ~70% of normal moves, bias to defensive
+    const allowedCount = Math.max(1, Math.floor(standardMoves.length * 0.7));
+
+    const defensiveMoves = standardMoves.filter(move => {
+      const targetPiece = this.chess.get(move.to as any);
+      return !targetPiece;
+    });
+    const captureMoves = standardMoves.filter(move => {
+      const targetPiece = this.chess.get(move.to as any);
+      return !!targetPiece;
+    });
+
+    const mixed = [
+      ...defensiveMoves.slice(0, Math.floor(allowedCount * 0.7)),
+      ...captureMoves.slice(0, Math.ceil(allowedCount * 0.3)),
+    ];
+    return mixed.map(m => m.to);
   }
 
   private calculatePassiveBonus(_ability: PieceAbility, _move: Move): number {
@@ -3429,6 +3675,7 @@ export class ChessEngine {
         // **ENHANCED: Dominated enemies have restricted movement**
         const restrictedMoves = this.getRestrictedMovesForDominated(enemySquare);
         enemyEvolution.modifiedMoves = restrictedMoves; // Fewer moves available
+        enemyEvolution.isMoveRestricted = true;
         dominatedEnemies++;
       }
     });
@@ -3449,6 +3696,118 @@ export class ChessEngine {
       },
       success: true,
       description: `Queen dominates ${dominatedEnemies} enemies within range 3, restricts their movement (${QUEEN_DOMINANCE_COOLDOWN}s cooldown)`,
+    };
+  }
+
+  private executeRoyalDecree(move: Move, ability: PieceAbility): AbilityResult {
+    // Royal Decree: The king empowers nearby allies and lightly restricts nearby enemies for this turn.
+    const RADIUS = 2;
+
+    const pieceEvolution = this.pieceEvolutions.get(move.to);
+    if (pieceEvolution) {
+      // Track that decree was used; move-based cooldown handled by ability fields
+      // Optionally store an authority bonus for rendering/eval
+      pieceEvolution.authorityBonus = Math.max(1.0, (pieceEvolution.authorityBonus || 1.0) * 1.25);
+    }
+
+    const allies = this.getNearbyAllies(move.to, RADIUS);
+    const enemies = this.getNearbyEnemies(move.to, RADIUS);
+
+    let empoweredAllies = 0;
+    let restrictedEnemies = 0;
+
+    // Grant allied bonus moves (reuse consecrated ally helper to keep effects consistent)
+    allies.forEach(allySquare => {
+      const allyEvo = this.pieceEvolutions.get(allySquare);
+      if (!allyEvo) return;
+      const bonus = this.getConsecratedAllyBonusMoves(allySquare);
+      if (bonus.length > 0) {
+        allyEvo.modifiedMoves = [...(allyEvo.modifiedMoves || []), ...bonus];
+        allyEvo.allyBonus = Math.max(allyEvo.allyBonus || 1.0, 1.2);
+        empoweredAllies++;
+      }
+    });
+
+    // Lightly restrict enemy moves using decree-specific restriction helper
+    enemies.forEach(enemySquare => {
+      const enemyEvo = this.pieceEvolutions.get(enemySquare);
+      if (!enemyEvo) return;
+      const restricted = this.getRestrictedMovesForDecree(enemySquare);
+      if (restricted.length > 0) {
+        enemyEvo.modifiedMoves = restricted;
+        enemyEvo.dominancePenalty = Math.max(enemyEvo.dominancePenalty || 1.0, 0.8);
+        enemyEvo.isMoveRestricted = true;
+        restrictedEnemies++;
+      }
+    });
+
+    return {
+      type: ability.id,
+      effect: {
+        radius: RADIUS,
+        empoweredAllies,
+        restrictedEnemies,
+      },
+      success: true,
+      description: `Royal Decree empowers ${empoweredAllies} allies and restricts ${restrictedEnemies} enemies (radius ${RADIUS})`,
+    };
+  }
+
+  private executeLastStand(move: Move, ability: PieceAbility): AbilityResult {
+    // Last Stand: When under duress (few pieces left or in check), boost defense and slightly restrict adjacent enemies
+    const RADIUS = 1;
+
+    // Determine duress condition: own pieces <= threshold of starting 16 OR currently in check
+    const myColor = this.chess.get(move.to as any)?.color;
+    let ownPieces = 0;
+    const board = this.chess.board();
+    for (const rank of board) {
+      for (const sq of rank) {
+        if (sq && sq.color === myColor) ownPieces++;
+      }
+    }
+
+    // Get threshold from store if available, else default 0.2 (>= from evolution defaults)
+    let threshold = 0.2;
+    try {
+      const store = (globalThis as any).chronoChessStore;
+      const ls = store?.pieceEvolutions?.king?.lastStandThreshold;
+      if (typeof ls === 'number') threshold = ls;
+    } catch {}
+
+    const underDuress = this.chess.inCheck() || ownPieces <= Math.ceil(16 * threshold);
+
+    const evo = this.pieceEvolutions.get(move.to);
+    if (evo) {
+      evo.defensiveBonus = Math.max(evo.defensiveBonus || 1.0, underDuress ? 2.0 : 1.5);
+    }
+
+    // Slightly restrict adjacent enemies if under duress
+    let restrictedEnemies = 0;
+    if (underDuress) {
+      const enemies = this.getNearbyEnemies(move.to, RADIUS);
+      enemies.forEach(enemySquare => {
+        const enemyEvo = this.pieceEvolutions.get(enemySquare);
+        if (!enemyEvo) return;
+        const restricted = this.getRestrictedMovesForDecree(enemySquare);
+        if (restricted.length > 0) {
+          enemyEvo.modifiedMoves = restricted;
+          enemyEvo.isMoveRestricted = true;
+          restrictedEnemies++;
+        }
+      });
+    }
+
+    return {
+      type: ability.id,
+      effect: {
+        radius: RADIUS,
+        defenseBoost: evo?.defensiveBonus || 1.0,
+        restrictedEnemies,
+        underDuress,
+      },
+      success: true,
+      description: `Last Stand ${underDuress ? 'activated' : 'empowers defenses'}; restricted ${restrictedEnemies} adjacent enemies`,
     };
   }
 
@@ -3629,17 +3988,32 @@ export class ChessEngine {
     const moves: Square[] = [];
     const direction = piece.color === 'w' ? 1 : -1;
 
-    // Breakthrough allows moving through enemy pieces diagonally
+    // Gate by breakthrough ability availability for this piece
+    const evo = this.pieceEvolutions.get(square);
+    const breakthrough = evo?.abilities.find(
+      a => a.id === 'breakthrough' || a.id === 'phase-through'
+    );
+    if (!breakthrough || !this.isAbilityAvailableForGeneration(breakthrough)) {
+      return moves;
+    }
+
+    // Nerfed: only a single-step diagonal forward (no multi-step). Also allow forward capture.
     for (const fileOffset of [-1, 1]) {
       const newFile = file + fileOffset;
-      if (newFile >= 0 && newFile < 8) {
-        for (let steps = 1; steps <= 2; steps++) {
-          const newRank = rank + direction * steps;
-          if (newRank >= 0 && newRank < 8) {
-            const targetSquare = String.fromCharCode(97 + newFile) + (newRank + 1);
-            moves.push(targetSquare);
-          }
-        }
+      const newRank = rank + direction;
+      if (newFile >= 0 && newFile < 8 && newRank >= 0 && newRank < 8) {
+        const targetSquare = String.fromCharCode(97 + newFile) + (newRank + 1);
+        moves.push(targetSquare);
+      }
+    }
+
+    // Forward capture: if an enemy piece is directly ahead, allow capturing it
+    const fRank = rank + direction;
+    if (fRank >= 0 && fRank < 8) {
+      const forwardSquare = String.fromCharCode(97 + file) + (fRank + 1);
+      const occupant = this.chess.get(forwardSquare as any);
+      if (occupant && occupant.color !== piece.color) {
+        moves.push(forwardSquare);
       }
     }
 
@@ -3779,21 +4153,43 @@ export class ChessEngine {
     const rank = parseInt(square[1]) - 1;
     const direction = piece.color === 'w' ? 1 : -1;
 
-    // Enhanced pawn: can move 2 squares forward even after first move
-    for (let steps = 1; steps <= 2; steps++) {
-      const newRank = rank + direction * steps;
+    // Access evolution to check ability gating and reduce power
+    const evo = this.pieceEvolutions.get(square);
+    const enhancedMarch = evo?.abilities.find(a => a.id === 'enhanced-march');
+    const breakthrough = evo?.abilities.find(
+      a => a.id === 'breakthrough' || a.id === 'phase-through'
+    );
+
+    const canUseEnhancedMarch = enhancedMarch
+      ? this.isAbilityAvailableForGeneration(enhancedMarch)
+      : false;
+    const canUseBreakthrough = breakthrough
+      ? this.isAbilityAvailableForGeneration(breakthrough)
+      : false;
+
+    // Reduced power: allow only a single extra forward step once (no persistent 2-step every turn)
+    if (canUseEnhancedMarch) {
+      const newRank = rank + direction * 2;
       if (newRank >= 0 && newRank < 8) {
         moves.push(String.fromCharCode(97 + file) + (newRank + 1));
       }
     }
 
-    // Enhanced pawn: diagonal moves without capturing
-    for (const fileOffset of [-1, 1]) {
-      const newFile = file + fileOffset;
-      if (newFile >= 0 && newFile < 8) {
-        const newRank = rank + direction;
-        if (newRank >= 0 && newRank < 8) {
-          moves.push(String.fromCharCode(97 + newFile) + (newRank + 1));
+    // Always include the normal single forward step (engine will de-dup)
+    const oneStep = rank + direction;
+    if (oneStep >= 0 && oneStep < 8) {
+      moves.push(String.fromCharCode(97 + file) + (oneStep + 1));
+    }
+
+    // Breakthrough: diagonal sidestep without capture, but only 1 square and only when available
+    if (canUseBreakthrough) {
+      for (const fileOffset of [-1, 1]) {
+        const newFile = file + fileOffset;
+        if (newFile >= 0 && newFile < 8) {
+          const newRank = rank + direction;
+          if (newRank >= 0 && newRank < 8) {
+            moves.push(String.fromCharCode(97 + newFile) + (newRank + 1));
+          }
         }
       }
     }
@@ -3993,6 +4389,9 @@ export class ChessEngine {
             type: 'movement',
             description: `Can move ${evolutionData.marchSpeed} squares forward`,
             cooldown: 0,
+            // Balance: allow once every 4 plies (~2 full moves) and only 1 total use by default
+            moveCooldown: 4,
+            maxUses: 1,
           });
         }
         if (evolutionData.resilience > 0) {
@@ -4002,6 +4401,9 @@ export class ChessEngine {
             type: 'movement',
             description: 'Can move diagonally without capturing',
             cooldown: 0,
+            // Balance: allow once every 6 plies and limit to 2 uses by default
+            moveCooldown: 6,
+            maxUses: 2,
           });
         }
         break;
@@ -4089,6 +4491,7 @@ export class ChessEngine {
             type: 'special',
             description: `Can use ${evolutionData.royalDecreeUses} decrees per game`,
             cooldown: 0,
+            maxUses: Math.max(1, evolutionData.royalDecreeUses | 0),
           });
         }
         if (evolutionData.lastStandThreshold > 0.2) {

@@ -443,6 +443,37 @@ export class ThreeJSRenderer {
   private lastFEN: string = '';
   private isAnimating: boolean = false;
 
+  // Utility: dispose any Object3D hierarchy (Meshes, Points, Lines, etc.) safely
+  private disposeObject3D(object: THREE.Object3D): void {
+    try {
+      // Dispose children first
+      if ((object as any).children && (object as any).children.length) {
+        const children = [...(object as any).children] as THREE.Object3D[];
+        for (const child of children) {
+          this.disposeObject3D(child);
+        }
+      }
+
+      // Dispose self
+      if (object instanceof THREE.Mesh) {
+        object.geometry?.dispose();
+        if (Array.isArray(object.material)) {
+          object.material.forEach(mat => mat.dispose());
+        } else {
+          (object.material as any)?.dispose?.();
+        }
+      } else if (object instanceof THREE.Points) {
+        object.geometry?.dispose();
+        (object.material as any)?.dispose?.();
+      } else if (object instanceof THREE.Line) {
+        (object.geometry as any)?.dispose?.();
+        (object.material as any)?.dispose?.();
+      }
+    } catch (err) {
+      console.warn('disposeObject3D failed:', err);
+    }
+  }
+
   private clearAllPieces(): void {
     console.log(`🧹 Clearing ${this.pieces.size} pieces from board`);
 
@@ -452,20 +483,7 @@ export class ThreeJSRenderer {
       this.board.remove(piece);
 
       // Dispose of geometry and materials to prevent memory leaks
-      if (piece instanceof THREE.Group) {
-        piece.children.forEach(child => {
-          if (child instanceof THREE.Mesh) {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-              if (Array.isArray(child.material)) {
-                child.material.forEach(mat => mat.dispose());
-              } else {
-                child.material.dispose();
-              }
-            }
-          }
-        });
-      }
+      this.disposeObject3D(piece);
     });
 
     this.pieces.clear();
@@ -554,47 +572,54 @@ export class ThreeJSRenderer {
           `No piece found at ${fromSquare} for move animation. Available pieces:`,
           Array.from(this.pieces.keys())
         );
-        // Try to update the board first, then retry
-        console.log('Attempting to update board and retry animation...');
-        return;
+        // Fallback: force a board update to resync visual state with authoritative game state
+        try {
+          const engine = (window as any).chronoChessEngine || (globalThis as any).chronoChessEngine;
+          const gameState =
+            engine && typeof engine.getGameState === 'function' ? engine.getGameState() : null;
+          if (gameState) {
+            console.log('Forcing board resync due to missing piece for animation');
+            this.forceRefreshBoard(gameState);
+          }
+        } catch (err) {
+          console.warn('Board resync fallback failed:', err);
+        }
+        return; // Skip animation; next updates will be in sync
       }
 
       // Calculate positions
       const fromPosition = this.getThreeJSPosition(fromSquare);
       const toPosition = this.getThreeJSPosition(toSquare);
 
-      // Handle captured piece - remove it immediately
-      const capturedPiece = this.pieces.get(toSquare);
-      if (capturedPiece) {
+      // Handle captured piece - remove it immediately (supports en passant as well)
+      const capturedAtDest = this.pieces.get(toSquare);
+      const flags: string = move.flags || '';
+      if (capturedAtDest) {
         console.log(`💥 Removing captured piece at ${toSquare}`);
-
-        // Remove from scene immediately
-        this.board.remove(capturedPiece);
-
-        // Dispose of resources
-        if (capturedPiece instanceof THREE.Group) {
-          capturedPiece.children.forEach(child => {
-            if (child instanceof THREE.Mesh) {
-              if (child.geometry) child.geometry.dispose();
-              if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(mat => mat.dispose());
-                } else {
-                  child.material.dispose();
-                }
-              }
-            }
-          });
-        }
-
-        // Remove from tracking
+        this.board.remove(capturedAtDest);
+        this.disposeObject3D(capturedAtDest);
         this.pieces.delete(toSquare);
+      } else if (flags.includes('e')) {
+        // En passant: captured pawn is not at destination square; compute its square
+        const toFile = toSquare.charCodeAt(0) - 97;
+        const toRank = parseInt(toSquare[1], 10);
+        // Determine mover color based on material of moving piece
+        const moverColor = this.getPieceColorFromMesh(piece);
+        const capturedRank = moverColor === 'w' ? toRank - 1 : toRank + 1;
+        const capturedSquare = String.fromCharCode(97 + toFile) + String(capturedRank);
+        const epVictim = this.pieces.get(capturedSquare);
+        if (epVictim) {
+          console.log(`💥 En passant: removing captured pawn at ${capturedSquare}`);
+          this.board.remove(epVictim);
+          this.disposeObject3D(epVictim);
+          this.pieces.delete(capturedSquare);
+        }
       }
 
       // Set animation flag to prevent board updates
       this.isAnimating = true;
 
-      // Animate the moving piece
+      // Animate the moving piece (king in case of castling)
       await this.animationSystem.createMoveAnimation(
         piece,
         fromPosition,
@@ -610,6 +635,59 @@ export class ThreeJSRenderer {
       // Clear animation flag
       this.isAnimating = false;
 
+      // Handle castling: move the rook as well if flags indicate castling
+      try {
+        const flags: string = move.flags || '';
+        if (flags.includes('k') || flags.includes('q')) {
+          // Determine color by moved piece material
+          const moverColor = this.getPieceColorFromMesh(piece);
+          const isKingside = flags.includes('k');
+          let rookFrom = '';
+          let rookTo = '';
+          if (moverColor === 'w') {
+            if (isKingside) {
+              rookFrom = 'h1';
+              rookTo = 'f1';
+            } else {
+              rookFrom = 'a1';
+              rookTo = 'd1';
+            }
+          } else {
+            if (isKingside) {
+              rookFrom = 'h8';
+              rookTo = 'f8';
+            } else {
+              rookFrom = 'a8';
+              rookTo = 'd8';
+            }
+          }
+
+          const rook = this.pieces.get(rookFrom);
+          if (rook) {
+            const rookFromPos = this.getThreeJSPosition(rookFrom);
+            const rookToPos = this.getThreeJSPosition(rookTo);
+            await this.animationSystem.createMoveAnimation(
+              rook,
+              rookFromPos,
+              rookToPos,
+              Math.max(350, duration - 100),
+              'arc'
+            );
+            this.pieces.delete(rookFrom);
+            this.pieces.set(rookTo, rook);
+          } else {
+            // If rook group isn't tracked (rare), rely on reconciliation to correct visuals
+            console.warn(
+              'Castling rook not found at',
+              rookFrom,
+              '- will reconcile after animation'
+            );
+          }
+        }
+      } catch (castleErr) {
+        console.warn('Castling animation failed (non-fatal):', castleErr);
+      }
+
       // Handle promotion
       if (move.promotion) {
         console.log(`🔄 Handling promotion: ${move.promotion} at ${toSquare}`);
@@ -620,28 +698,41 @@ export class ThreeJSRenderer {
         // Remove the pawn and create the promoted piece
         this.board.remove(piece);
         this.pieces.delete(toSquare);
-
-        // Dispose of the pawn's resources
-        if (piece instanceof THREE.Group) {
-          piece.children.forEach(child => {
-            if (child instanceof THREE.Mesh) {
-              if (child.geometry) child.geometry.dispose();
-              if (child.material) {
-                if (Array.isArray(child.material)) {
-                  child.material.forEach(mat => mat.dispose());
-                } else {
-                  child.material.dispose();
-                }
-              }
-            }
-          });
-        }
+        this.disposeObject3D(piece);
 
         // Create the promoted piece
         this.createAndAddPiece(move.promotion, pieceColor, toSquare);
         console.log(
           `✅ Promotion complete: ${pieceColor} ${move.promotion} created at ${toSquare}`
         );
+      }
+
+      // After any move, validate and clean the board to catch stragglers
+      this.validateAndCleanBoard();
+
+      // Best-effort reconciliation with authoritative engine FEN after animations
+      try {
+        const engine = (window as any).chronoChessEngine || (globalThis as any).chronoChessEngine;
+        if (engine && typeof engine.getGameState === 'function') {
+          const gs = engine.getGameState();
+          // If our local FEN differs from engine's, or piece counts diverge, refresh board
+          const fenChanged = this.lastFEN !== gs.fen;
+          const expectedPieces = (() => {
+            try {
+              const boardPart = gs.fen.split(' ')[0];
+              return boardPart.replace(/\d/g, '').replace(/\//g, '').length;
+            } catch {
+              return -1;
+            }
+          })();
+          const countMismatch = expectedPieces >= 0 && this.pieces.size !== expectedPieces;
+          if (!this.isAnimating && (fenChanged || countMismatch)) {
+            console.log('🔁 Reconciling renderer with engine FEN');
+            this.updateBoard(gs);
+          }
+        }
+      } catch (err) {
+        console.warn('Post-animation reconciliation failed (non-fatal):', err);
       }
     } catch (error) {
       console.error('Error animating chess move:', error);
@@ -2707,14 +2798,7 @@ export class ThreeJSRenderer {
 
     // Dispose of all geometries and materials
     this.scene.traverse(object => {
-      if (object instanceof THREE.Mesh) {
-        object.geometry.dispose();
-        if (Array.isArray(object.material)) {
-          object.material.forEach(material => material.dispose());
-        } else {
-          object.material.dispose();
-        }
-      }
+      this.disposeObject3D(object);
     });
 
     // Clear pieces map

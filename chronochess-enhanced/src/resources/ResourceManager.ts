@@ -14,6 +14,7 @@ import {
   DEFAULT_GENERATION_RATES,
   DEFAULT_BONUS_MULTIPLIERS,
   DEFAULT_OFFLINE_EFFICIENCY,
+  DEFAULT_STANDBY_EFFICIENCY,
   DEFAULT_MAX_OFFLINE_HOURS,
   DEFAULT_GENERATION_TICK_RATE,
 } from './resourceConfig';
@@ -25,12 +26,14 @@ export class ResourceManager {
   private playTimeAccumulatorMs: number = 0;
   private config: ResourceConfig;
   private premiumCurrencySystem: PremiumCurrencySystem;
+  private isStandbyMode: boolean = false;
 
   constructor(config?: Partial<ResourceConfig>) {
     this.lastUpdateTime = Date.now();
     this.config = {
       maxOfflineHours: DEFAULT_MAX_OFFLINE_HOURS,
       offlineEfficiency: DEFAULT_OFFLINE_EFFICIENCY,
+      standbyEfficiency: DEFAULT_STANDBY_EFFICIENCY,
       generationTickRate: DEFAULT_GENERATION_TICK_RATE,
       ...config,
     };
@@ -48,6 +51,10 @@ export class ResourceManager {
   }
 
   // Resource generation
+  setStandbyMode(standby: boolean): void {
+    this.isStandbyMode = standby;
+  }
+
   startIdleGeneration(
     getBonusRates?: () => {
       temporalEssence: number;
@@ -81,12 +88,15 @@ export class ResourceManager {
     // Get dynamic rates from callback if provided
     const bonusRates = getBonusRates ? getBonusRates() : null;
 
+    // Apply standby penalty if in standby mode (when not actively playing)
+    const generationEfficiency = this.isStandbyMode ? this.config.standbyEfficiency : 1.0;
+
     // Generate Temporal Essence with evolution bonuses
     const teRate = bonusRates
       ? bonusRates.temporalEssence
       : this.resources.generationRates.temporalEssence;
     const teMultiplier = this.resources.bonusMultipliers.temporalEssence || 1;
-    const teAmount = teRate * teMultiplier * deltaTime;
+    const teAmount = teRate * teMultiplier * deltaTime * generationEfficiency;
     this.resources.temporalEssence =
       Math.floor((this.resources.temporalEssence + teAmount) * 100) / 100;
 
@@ -95,20 +105,24 @@ export class ResourceManager {
       ? bonusRates.mnemonicDust
       : this.resources.generationRates.mnemonicDust;
     const mdMultiplier = this.resources.bonusMultipliers.mnemonicDust || 1;
-    const mdAmount = mdRate * mdMultiplier * deltaTime;
+    const mdAmount = mdRate * mdMultiplier * deltaTime * generationEfficiency;
     this.resources.mnemonicDust = Math.floor((this.resources.mnemonicDust + mdAmount) * 100) / 100;
 
     // Generate Arcane Mana with queen bonuses
     const amRate = bonusRates ? bonusRates.arcaneMana : this.resources.generationRates.arcaneMana;
     const amMultiplier = this.resources.bonusMultipliers.arcaneMana || 1;
-    const amAmount = amRate * amMultiplier * deltaTime;
+    const amAmount = amRate * amMultiplier * deltaTime * generationEfficiency;
     this.resources.arcaneMana = Math.floor((this.resources.arcaneMana + amAmount) * 100) / 100;
 
     // Aether Shards don't generate passively - only from wins
     // But apply any bonus rates if provided
     if (bonusRates && bonusRates.aetherShards > 0) {
       this.resources.aetherShards =
-        Math.floor((this.resources.aetherShards + bonusRates.aetherShards * deltaTime) * 100) / 100;
+        Math.floor(
+          (this.resources.aetherShards +
+            bonusRates.aetherShards * deltaTime * generationEfficiency) *
+            100
+        ) / 100;
     }
 
     console.log(
@@ -397,9 +411,12 @@ export class ResourceManager {
   simulateTimePassage(seconds: number): ResourceGains {
     const gains: ResourceGains = {};
 
+    // Apply standby penalty if in standby mode (similar to generateResources)
+    const generationEfficiency = this.isStandbyMode ? this.config.standbyEfficiency : 1.0;
+
     Object.entries(this.resources.generationRates).forEach(([resource, rate]) => {
       const multiplier = this.resources.bonusMultipliers[resource] || 1;
-      const amount = rate * multiplier * seconds;
+      const amount = rate * multiplier * seconds * generationEfficiency;
 
       if (resource === 'temporalEssence') gains.temporalEssence = amount;
       else if (resource === 'mnemonicDust') gains.mnemonicDust = amount;

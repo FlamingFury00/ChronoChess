@@ -22,6 +22,7 @@ import {
   QUEEN_MANA_REGEN_STEP,
   MAX_QUEEN_MANA_REGEN,
 } from '../resources/resourceConfig';
+import { computeEncounterXP } from '../lib/xp';
 import { PieceEvolutionSystem } from '../evolution/PieceEvolutionSystem';
 import { EvolutionTreeSystem } from '../evolution/EvolutionTreeSystem';
 import { ChessEngine } from '../engine/ChessEngine';
@@ -37,6 +38,11 @@ import {
 } from './pieceEvolutionStore';
 
 // Campaign system removed - using simple Solo Mode instead
+
+// Guard: avoid showing the offline "Welcome back" toast more than once per session
+let _welcomeBackToastShown = false;
+let _welcomeBackToastLastTs = 0;
+const WELCOME_BACK_TOAST_DEDUPE_MS = 4000; // if fired twice quickly, suppress duplicate
 
 // Helper function to convert piece type names to codes
 const pieceTypeToCode = (pieceType: keyof PieceEvolutionData): PieceType => {
@@ -67,12 +73,25 @@ export interface SaveData {
     encountersWon: number;
     encountersLost: number;
     totalEncounters: number;
+    currentWinStreak?: number;
+    bestWinStreak?: number;
   };
   // Critical fields for preserving game progress:
   unlockedEvolutions?: string[]; // Evolution tree unlock progress
   gameMode?: 'auto' | 'manual'; // Current game mode
   knightDashCooldown?: number; // Ability cooldowns
   manualModePieceStates?: any; // Piece states for manual mode abilities
+  // Achievement data for cloud persistence:
+  achievements?: Array<{
+    id: string;
+    name: string;
+    description: string;
+    category: string;
+    rarity: string;
+    reward: any;
+    unlockedTimestamp?: number;
+    claimed?: boolean;
+  }>; // Achievement progress and claimed status
 }
 
 interface GameStore extends AppState {
@@ -86,7 +105,11 @@ interface GameStore extends AppState {
     encountersWon: number;
     encountersLost: number;
     totalEncounters: number;
+    currentWinStreak: number;
+    bestWinStreak: number;
   };
+  currentEncounterStartTime: number | null;
+  piecesLostThisEncounter: number;
 
   // Piece evolution data (matching HTML reference)
   pieceEvolutions: PieceEvolutionData;
@@ -152,6 +175,7 @@ interface GameStore extends AppState {
   awardResources: (gains: any) => void;
   startResourceGeneration: () => void;
   stopResourceGeneration: () => void;
+  setResourceGenerationStandby: (standby: boolean) => void;
   fastForwardResourceGeneration: (seconds: number) => void;
 
   // Evolution actions
@@ -188,6 +212,16 @@ interface GameStore extends AppState {
     totalEncounters: number;
   };
   resetSoloModeStats: () => void;
+  handleEncounterResolution: (
+    victory: boolean,
+    source: 'auto' | 'manual'
+  ) => {
+    outcomeMessage: string;
+    baseReward: number;
+    bonusShards: number;
+    currentWinStreak: number;
+    bestWinStreak: number;
+  };
 
   // Manual play actions
   setGameMode: (mode: 'auto' | 'manual') => void;
@@ -239,6 +273,7 @@ interface GameStore extends AppState {
 
   // Utility actions
   reset: () => void;
+  updateGenerationRates: () => void;
 }
 
 const initialGameState: GameState = {
@@ -289,11 +324,21 @@ const MAX_UNDO_STACK_SIZE = 50;
 // Auto-save timer reference
 let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
+// Resource UI update timer reference
+let resourceUpdateInterval: ReturnType<typeof setInterval> | null = null;
+
 // Core system instances
 const resourceManager = new ResourceManager();
 const pieceEvolutionSystem = new PieceEvolutionSystem();
 const evolutionTreeSystem = new EvolutionTreeSystem();
 const chessEngine = new ChessEngine();
+
+// Expose ResourceManager globally for debugging and synchronization
+try {
+  (globalThis as any).chronoChessResourceManager = resourceManager;
+} catch (err) {
+  // ignore in constrained environments
+}
 // Reentrancy guard to avoid recursive calls between engine validation and
 // store-based enhanced move generation (engine may call back into
 // `getEnhancedValidMoves` during `isEnhancedMoveLegal`). When set, we
@@ -318,14 +363,9 @@ try {
     .initialize()
     .catch(err => console.warn('Failed to initialize progress tracker:', err));
 
-  // If an achievement is unlocked via the progress tracker, award its aetherShards
+  // If an achievement is unlocked via the progress tracker, show notification but DON'T auto-claim
   progressTracker.addAchievementUnlockedListener((achievement: any) => {
     try {
-      if (achievement && (achievement as any).reward && (achievement as any).reward.aetherShards) {
-        const shards = (achievement as any).reward.aetherShards;
-        resourceManager.awardResources({ aetherShards: shards });
-        console.log(`Awarded ${shards} Aether Shards for achievement: ${achievement.name}`);
-      }
       // Analytics: track achievement unlock
       try {
         analyticsSystem
@@ -345,20 +385,14 @@ try {
         // Non-fatal if toast not available
       }
 
-      // Rich UI for big achievements
+      // Always show the achievement modal so players can claim immediately
       try {
-        const isBig =
-          achievement.rarity === 'epic' ||
-          achievement.rarity === 'legendary' ||
-          ((achievement.reward && achievement.reward.aetherShards) || 0) >= 50;
-        if (isBig) {
-          showAchievement(achievement);
-        }
+        showAchievement(achievement);
       } catch (err) {
         // Non-fatal
       }
     } catch (err) {
-      console.error('Failed to award achievement reward:', err);
+      console.error('Failed to handle achievement unlock:', err);
     }
   });
 } catch (err) {
@@ -366,17 +400,85 @@ try {
   console.warn('Could not wire progressTracker to resourceManager:', err);
 }
 
-// Register the claim handler used by the Achievement modal
+// Register the claim handler used by the Achievement modal and UI
 try {
   setAchievementClaimHandler(async (achievement: any) => {
     try {
-      // Only award if not already claimed
-      const alreadyClaimed = achievement.claimed;
-      if (alreadyClaimed) return;
+      // Ensure ProgressTracker is fully initialized before checking/claiming
+      await progressTracker.ensureInitialized();
 
-      const shards = (achievement.reward && achievement.reward.aetherShards) || 0;
+      // Check if already claimed (use progress tracker for authoritative state)
+      const currentAchievements = await progressTracker.getAchievements();
+      const currentAch = currentAchievements.find(a => a.id === achievement.id);
+      if (currentAch && currentAch.claimed) {
+        console.log(`Achievement ${achievement.id} already claimed, skipping`);
+        return;
+      }
+
+      // Double-check that the achievement is actually unlocked before allowing claim
+      if (!currentAch) {
+        console.warn(
+          `Cannot claim achievement ${achievement.id}: not found in unlocked achievements`
+        );
+        return;
+      }
+
+      // Mark as claimed first to prevent double-claiming
+      const claimSuccess = await progressTracker.markAchievementClaimed(achievement.id);
+      if (!claimSuccess) {
+        console.log(`Failed to mark achievement ${achievement.id} as claimed`);
+        return;
+      }
+
+      // Award resources after successful claim using canonical tracker record (prevents tampering)
+      const canonicalAfterClaim = (await progressTracker.getAchievements()).find(
+        a => a.id === achievement.id
+      );
+      const shards = (canonicalAfterClaim?.reward && canonicalAfterClaim.reward.aetherShards) || 0;
       if (shards > 0) {
         resourceManager.awardResources({ aetherShards: shards });
+        // Immediately sync updated resource snapshot into the store so UI reflects
+        // newly awarded shards without waiting for the next resource tick or action.
+        // (Fixes: achievement rewards sometimes appearing delayed.)
+        try {
+          const { useGameStore } = await import('./gameStore');
+          // Update store resources from authoritative ResourceManager state
+          useGameStore.setState({ resources: resourceManager.getResourceState() });
+        } catch (syncErr) {
+          console.warn('Post-claim resource sync failed (non-fatal):', syncErr);
+        }
+      }
+
+      // Force a best-effort immediate save of overall game state so that
+      // claimed flag + awarded resources are durably persisted to cloud/local.
+      try {
+        const { persistAll } = await import('./saveAdapter');
+        // Access store AFTER ensuring resources are synced (above) so persisted save contains new shards
+        const { useGameStore } = await import('./gameStore');
+        // Re-fetch state snapshot (resources may have been updated just prior)
+        const state = useGameStore.getState();
+        // Serialize needed extras
+        const serialized = state.serialize();
+        void persistAll(
+          'chronochess_save',
+          state.game,
+          state.resources,
+          state.evolutions,
+          state.settings,
+          {
+            moveHistory: serialized.moveHistory,
+            undoStack: serialized.undoStack,
+            redoStack: serialized.redoStack,
+            pieceEvolutions: serialized.pieceEvolutions,
+            soloModeStats: serialized.soloModeStats,
+            unlockedEvolutions: serialized.unlockedEvolutions,
+            gameMode: serialized.gameMode,
+            knightDashCooldown: serialized.knightDashCooldown,
+            manualModePieceStates: serialized.manualModePieceStates,
+          }
+        ).catch(err => console.warn('Post-claim immediate save failed (non-fatal):', err));
+      } catch (err) {
+        console.warn('Failed to schedule post-claim save (non-fatal):', err);
       }
 
       // Play celebratory audio feedback (best-effort)
@@ -404,15 +506,10 @@ try {
 
       // Analytics for claim
       try {
-        analyticsSystem.trackAchievementUnlock({ ...achievement, claimed: true }).catch(() => {});
+        analyticsSystem
+          .trackAchievementUnlock({ ...(canonicalAfterClaim || achievement), claimed: true })
+          .catch(() => {});
       } catch {}
-
-      // Persist claimed state
-      try {
-        await progressTracker.markAchievementClaimed(achievement.id);
-      } catch (err) {
-        // best-effort
-      }
     } catch (err) {
       console.error('Achievement claim handler failed:', err);
     }
@@ -443,7 +540,11 @@ export const useGameStore = create<GameStore>()(
         encountersWon: 0,
         encountersLost: 0,
         totalEncounters: 0,
+        currentWinStreak: 0,
+        bestWinStreak: 0,
       },
+      currentEncounterStartTime: null,
+      piecesLostThisEncounter: 0,
       gameMode: 'auto',
       isManualGameActive: false,
       validMoves: [],
@@ -731,6 +832,8 @@ export const useGameStore = create<GameStore>()(
           gameMode: state.gameMode, // Current game mode
           knightDashCooldown: state.knightDashCooldown, // Ability cooldowns
           manualModePieceStates: state.manualModePieceStates, // Piece states for abilities
+          // Achievements will be populated by the save system
+          achievements: [],
         };
       },
 
@@ -799,10 +902,12 @@ export const useGameStore = create<GameStore>()(
             moveHistory: saveData.moveHistory || [],
             undoStack: saveData.undoStack || [],
             redoStack: saveData.redoStack || [],
-            soloModeStats: saveData.soloModeStats || {
-              encountersWon: 0,
-              encountersLost: 0,
-              totalEncounters: 0,
+            soloModeStats: {
+              encountersWon: saveData.soloModeStats?.encountersWon ?? 0,
+              encountersLost: saveData.soloModeStats?.encountersLost ?? 0,
+              totalEncounters: saveData.soloModeStats?.totalEncounters ?? 0,
+              currentWinStreak: saveData.soloModeStats?.currentWinStreak ?? 0,
+              bestWinStreak: saveData.soloModeStats?.bestWinStreak ?? 0,
             },
             // Restore critical progress data:
             unlockedEvolutions: unlockedEvolutionsSet,
@@ -810,6 +915,35 @@ export const useGameStore = create<GameStore>()(
             knightDashCooldown: saveData.knightDashCooldown || 0,
             manualModePieceStates: saveData.manualModePieceStates || {},
           });
+
+          // Restore achievements from save data if available
+          if (
+            saveData.achievements &&
+            Array.isArray(saveData.achievements) &&
+            saveData.achievements.length > 0
+          ) {
+            try {
+              console.log(
+                '🏆 Restoring achievements from cloud save:',
+                saveData.achievements.length
+              );
+              // Lazy require to avoid circular dependency during module evaluation
+              const { progressTracker } = require('../save/ProgressTracker');
+              if (
+                progressTracker &&
+                typeof progressTracker.restoreAchievementsFromSave === 'function'
+              ) {
+                progressTracker
+                  .ensureInitialized()
+                  .then(() => progressTracker.restoreAchievementsFromSave(saveData.achievements))
+                  .catch((err: any) =>
+                    console.warn('Failed to restore achievements from save:', err)
+                  );
+              }
+            } catch (err) {
+              console.warn('Failed to access ProgressTracker for achievement restoration:', err);
+            }
+          }
 
           // Reconcile resource-based achievements with ProgressTracker after loading
           try {
@@ -820,8 +954,13 @@ export const useGameStore = create<GameStore>()(
               progressTracker &&
               typeof progressTracker.reconcileAchievementsWithStats === 'function'
             ) {
+              // Ensure ProgressTracker is fully initialized before reconciliation
+              // to prevent claimed achievements from being re-unlocked
               progressTracker
-                .reconcileAchievementsWithStats(finalResources)
+                .ensureInitialized()
+                .then(() => {
+                  return progressTracker.reconcileAchievementsWithStats(finalResources);
+                })
                 .catch((err: any) =>
                   console.warn('Failed to reconcile achievements after load:', err)
                 );
@@ -840,6 +979,23 @@ export const useGameStore = create<GameStore>()(
 
           // Re-sync ResourceManager with loaded state (including offline progress)
           resourceManager.setResourceState(finalResources);
+
+          // CRITICAL FIX: Ensure ResourceManager state is properly synchronized
+          // by explicitly updating its internal state with a small delay to ensure
+          // all store updates are complete
+          setTimeout(() => {
+            try {
+              resourceManager.setResourceState(finalResources);
+              console.log('🔧 ResourceManager state synchronized with loaded data:', {
+                temporalEssence: finalResources.temporalEssence,
+                mnemonicDust: finalResources.mnemonicDust,
+                aetherShards: finalResources.aetherShards,
+                arcaneMana: finalResources.arcaneMana,
+              });
+            } catch (err) {
+              console.error('Failed to synchronize ResourceManager state:', err);
+            }
+          }, 50);
 
           // Re-initialize piece states if we loaded manual mode data
           if (
@@ -873,6 +1029,15 @@ export const useGameStore = create<GameStore>()(
               .join(', ');
 
             setTimeout(() => {
+              const now = Date.now();
+              if (
+                _welcomeBackToastShown &&
+                now - _welcomeBackToastLastTs < WELCOME_BACK_TOAST_DEDUPE_MS
+              ) {
+                return; // suppress duplicate within dedupe window
+              }
+              _welcomeBackToastShown = true;
+              _welcomeBackToastLastTs = now;
               try {
                 showToast(
                   `🎮 Welcome back! You were away for ${hoursAway}h — Gains: ${gainSummary} ${offlineProgress.wasCaped ? '(capped)' : ''}`,
@@ -881,7 +1046,7 @@ export const useGameStore = create<GameStore>()(
               } catch {
                 console.log('Welcome back:', hoursAway, gainSummary);
               }
-            }, 1000);
+            }, 900);
           }
 
           console.log('✅ Save data loaded successfully with all progress preserved:', {
@@ -892,6 +1057,12 @@ export const useGameStore = create<GameStore>()(
             manualModePieceStates: Object.keys(saveData.manualModePieceStates || {}).length,
             offlineGains: offlineProgress?.gains || 'none',
           });
+
+          // Update generation rates based on loaded piece evolutions
+          // NOTE: Resource generation will be started by the initialization system
+          setTimeout(() => {
+            get().updateGenerationRates();
+          }, 100);
 
           return true;
         } catch (error) {
@@ -927,16 +1098,128 @@ export const useGameStore = create<GameStore>()(
           }).catch(err => console.warn('persistAll failed:', err));
 
           // Also cache to localStorage for compatibility with existing tests and fast resume
+          // IMPORTANT: Include achievements in the compat cache so that if IndexedDB is cleared
+          // but localStorage remains, we can still restore achievements offline.
           try {
             if (typeof localStorage !== 'undefined' && localStorage !== null) {
-              localStorage.setItem(key, JSON.stringify(data));
-              console.log('💾 Cached save to localStorage (compat cache)');
-              // Maintain a rolling backup copy to help guest recovery if the primary save becomes corrupt
-              try {
-                localStorage.setItem(`${key}_backup`, JSON.stringify(data));
-              } catch (backupErr) {
-                console.warn('Backup save write failed (non-fatal):', backupErr);
-              }
+              (async () => {
+                try {
+                  const { progressTracker } = await import('../save/ProgressTracker');
+                  await progressTracker.ensureInitialized();
+                  const achievements = await progressTracker.getAchievements();
+                  const withAchievements = { ...data, achievements };
+                  localStorage.setItem(key, JSON.stringify(withAchievements));
+                  console.log('💾 Cached save to localStorage (compat cache, with achievements)');
+                  try {
+                    localStorage.setItem(`${key}_backup`, JSON.stringify(withAchievements));
+                  } catch (backupErr) {
+                    console.warn('Backup save write failed (non-fatal):', backupErr);
+                  }
+                } catch (achErr) {
+                  // Fallback: try to include minimal achievements from snapshot/pending fallbacks
+                  try {
+                    const achievements = (() => {
+                      try {
+                        const snapRaw = localStorage.getItem('chronochess_achievements_snapshot');
+                        const pendingRaw = localStorage.getItem('chronochess_pending_achievements');
+                        const claimedRaw = localStorage.getItem('chronochess_claimed_fallback');
+                        const flagsRaw = localStorage.getItem('chronochess_claimed_flags');
+                        const snap = snapRaw ? JSON.parse(snapRaw) : [];
+                        const pending = pendingRaw ? JSON.parse(pendingRaw) : {};
+                        const claimed = claimedRaw ? JSON.parse(claimedRaw) : {};
+                        const flags = flagsRaw ? JSON.parse(flagsRaw) : {};
+                        const map = new Map<string, any>();
+                        for (const [id, ach] of Object.entries(claimed || {})) {
+                          const achObj = ach && typeof ach === 'object' ? (ach as any) : {};
+                          map.set(id, { ...achObj, claimed: true });
+                        }
+                        for (const [id, ach] of Object.entries(pending || {})) {
+                          const achObj = ach && typeof ach === 'object' ? (ach as any) : {};
+                          const existing = map.get(id);
+                          if (!existing)
+                            map.set(id, { ...achObj, claimed: !!(achObj as any).claimed });
+                          else {
+                            const ts = Math.max(
+                              existing.unlockedTimestamp || 0,
+                              (achObj as any).unlockedTimestamp || 0
+                            );
+                            map.set(id, {
+                              ...existing,
+                              ...achObj,
+                              unlockedTimestamp: ts,
+                              claimed: !!(existing.claimed || (achObj as any).claimed),
+                            });
+                          }
+                        }
+                        for (const entry of Array.isArray(snap) ? snap : []) {
+                          if (!entry || !entry.id) continue;
+                          const existing = map.get(entry.id);
+                          const ts = Math.max(
+                            existing?.unlockedTimestamp || 0,
+                            entry.unlockedTimestamp || 0
+                          );
+                          const claimed = !!(existing?.claimed || entry.claimed);
+                          if (existing)
+                            map.set(entry.id, {
+                              ...existing,
+                              unlockedTimestamp: ts || Date.now(),
+                              claimed,
+                            });
+                          else
+                            map.set(entry.id, {
+                              id: entry.id,
+                              name: entry.id,
+                              description: '',
+                              category: 'special',
+                              rarity: 'common',
+                              reward: {},
+                              unlockedTimestamp: ts || Date.now(),
+                              claimed,
+                            });
+                        }
+                        for (const [id, flag] of Object.entries(flags || {})) {
+                          if (!flag) continue;
+                          const existing = map.get(id);
+                          if (existing) ((existing.claimed = true), map.set(id, existing));
+                          else
+                            map.set(id, {
+                              id,
+                              name: id,
+                              description: '',
+                              category: 'special',
+                              rarity: 'common',
+                              reward: {},
+                              unlockedTimestamp: Date.now(),
+                              claimed: true,
+                            });
+                        }
+                        return Array.from(map.values());
+                      } catch {
+                        return [];
+                      }
+                    })();
+                    const withAchievements = { ...data, achievements };
+                    localStorage.setItem(key, JSON.stringify(withAchievements));
+                    console.log(
+                      '💾 Cached save to localStorage (compat cache, snapshot achievements)'
+                    );
+                    try {
+                      localStorage.setItem(`${key}_backup`, JSON.stringify(withAchievements));
+                    } catch (backupErr) {
+                      console.warn('Backup save write failed (non-fatal):', backupErr);
+                    }
+                  } catch (fallbackAchErr) {
+                    // Final fallback: write without achievements
+                    localStorage.setItem(key, JSON.stringify(data));
+                    console.log('💾 Cached save to localStorage (compat cache, no achievements)');
+                    try {
+                      localStorage.setItem(`${key}_backup`, JSON.stringify(data));
+                    } catch (backupErr) {
+                      console.warn('Backup save write failed (non-fatal):', backupErr);
+                    }
+                  }
+                }
+              })().catch(e => console.warn('Compat cache write failed (non-fatal):', e));
             }
           } catch (err) {
             console.warn('localStorage cache failed (non-fatal):', err);
@@ -986,7 +1269,7 @@ export const useGameStore = create<GameStore>()(
                     try {
                       showToast('Recovered progress from backup save.', { level: 'info' });
                     } catch {}
-                    setTimeout(() => get().startResourceGeneration(), 100);
+                    // NOTE: Resource generation will be started by the initialization system
                     return true;
                   }
                 } catch (backupParseErr) {
@@ -1024,7 +1307,7 @@ export const useGameStore = create<GameStore>()(
             try {
               showToast('Progress restored from local storage.', { level: 'info' });
             } catch {}
-            setTimeout(() => get().startResourceGeneration(), 100);
+            // NOTE: Resource generation will be started by the initialization system
           } else {
             console.warn('Failed to deserialize save data');
             // Last-chance attempt: try backup if main deserialize failed
@@ -1043,7 +1326,7 @@ export const useGameStore = create<GameStore>()(
                   try {
                     showToast('Recovered progress from backup.', { level: 'info' });
                   } catch {}
-                  setTimeout(() => get().startResourceGeneration(), 100);
+                  // NOTE: Resource generation will be started by the initialization system
                   return true;
                 }
               }
@@ -1139,9 +1422,12 @@ export const useGameStore = create<GameStore>()(
           const out = await restoreAll(DEFAULT_SAVE_KEY);
           if (!out) return false;
           const { gameState, resources, evolutions, settings, extras } = out;
+          // IMPORTANT: Preserve the original save timestamp from metadata so offline progress
+          // can be calculated correctly during deserialize. Using Date.now() here would reset
+          // the time-away interval to ~0 and prevent offline gains from being applied.
           const serialized = {
             version: '1.0.0',
-            timestamp: Date.now(),
+            timestamp: (out as any)?.metadata?.timestamp ?? Date.now(),
             game: gameState,
             resources,
             evolutions: Array.from(evolutions.entries()),
@@ -1155,6 +1441,8 @@ export const useGameStore = create<GameStore>()(
             gameMode: extras?.gameMode,
             knightDashCooldown: extras?.knightDashCooldown,
             manualModePieceStates: extras?.manualModePieceStates,
+            // Include achievements snapshot from cloud/local save
+            achievements: extras?.achievements || [],
           } as any;
           const ok = get().deserialize(serialized);
           if (ok) {
@@ -1173,7 +1461,7 @@ export const useGameStore = create<GameStore>()(
               // If auth check fails, assume local storage
               showToast('Loaded from local storage.', { level: 'info' });
             }
-            setTimeout(() => get().startResourceGeneration(), 100);
+            // NOTE: Resource generation will be started by the initialization system
           }
           return ok;
         } catch (err) {
@@ -1270,6 +1558,29 @@ export const useGameStore = create<GameStore>()(
       },
 
       startResourceGeneration: () => {
+        // CRITICAL FIX: Stop any existing resource generation before starting new one
+        // This prevents multiple intervals from running simultaneously
+        get().stopResourceGeneration();
+
+        console.log('⚡ Starting resource generation (ensuring no duplicates)...');
+
+        // CRITICAL FIX: Sync ResourceManager with current store state before starting generation
+        const currentState = get();
+        try {
+          resourceManager.setResourceState(currentState.resources);
+          console.log('🔧 ResourceManager synchronized with store state before generation start:', {
+            temporalEssence: currentState.resources.temporalEssence,
+            mnemonicDust: currentState.resources.mnemonicDust,
+            aetherShards: currentState.resources.aetherShards,
+            arcaneMana: currentState.resources.arcaneMana,
+          });
+        } catch (err) {
+          console.error('Failed to sync ResourceManager before starting generation:', err);
+        }
+
+        // Initial update of generation rates
+        get().updateGenerationRates();
+
         // Set up resource generation with piece evolution bonuses
         resourceManager.startIdleGeneration(() => {
           const state = get();
@@ -1298,24 +1609,56 @@ export const useGameStore = create<GameStore>()(
         });
 
         // Start real-time UI updates
-        const updateInterval = setInterval(() => {
+        resourceUpdateInterval = setInterval(() => {
           const currentResources = resourceManager.getResourceState();
-          // Route through updateResources to ensure achievement checks and sync
-          get().updateResources(currentResources);
+          const currentStoreState = get();
+
+          // Only update the resource amounts, not the generation rates
+          const updatedResources = {
+            ...currentResources,
+            generationRates: currentStoreState.resources.generationRates, // Preserve store rates
+            bonusMultipliers: currentStoreState.resources.bonusMultipliers, // Preserve store multipliers
+          };
+
+          // Update store with preserved generation rates
+          set(() => ({
+            resources: updatedResources,
+          }));
+
+          // Track achievements but don't sync back to ResourceManager to avoid circular updates
+          try {
+            progressTracker
+              .trackResourceAccumulation({
+                temporalEssence: updatedResources.temporalEssence,
+                mnemonicDust: updatedResources.mnemonicDust,
+                arcaneMana: updatedResources.arcaneMana,
+                aetherShards: updatedResources.aetherShards,
+              })
+              .catch(err => console.warn('Failed to track resource achievements:', err));
+          } catch (err) {
+            console.warn('Progress tracker not available for resource tracking:', err);
+          }
         }, 300); // Update UI every 300ms to reduce update flood while keeping smooth display
 
-        // Store interval reference for cleanup
-        (globalThis as any).resourceUpdateInterval = updateInterval;
+        console.log('✅ Resource generation started with UI sync interval');
       },
 
       stopResourceGeneration: () => {
+        console.log('🛑 Stopping resource generation...');
+
+        // Stop ResourceManager generation
         resourceManager.stopGeneration();
 
         // Clear UI update interval
-        if ((globalThis as any).resourceUpdateInterval) {
-          clearInterval((globalThis as any).resourceUpdateInterval);
-          (globalThis as any).resourceUpdateInterval = null;
+        if (resourceUpdateInterval) {
+          clearInterval(resourceUpdateInterval);
+          resourceUpdateInterval = null;
+          console.log('✅ Resource UI update interval cleared');
         }
+      },
+
+      setResourceGenerationStandby: (standby: boolean) => {
+        resourceManager.setStandbyMode(standby);
       },
 
       fastForwardResourceGeneration: (seconds: number) => {
@@ -1447,10 +1790,22 @@ export const useGameStore = create<GameStore>()(
           ui: { ...state.ui, selectedSquare: square },
         })),
 
-      setCurrentScene: scene =>
+      setCurrentScene: scene => {
         set(state => ({
           ui: { ...state.ui, currentScene: scene },
-        })),
+        }));
+
+        // Update resource generation mode based on new scene
+        // Import here to avoid circular dependency
+        import('../store/initialization')
+          .then(({ updateResourceGenerationMode }) => {
+            // Get current user status - for simplicity, we'll pass null and let the function determine
+            updateResourceGenerationMode(scene, null);
+          })
+          .catch(err => {
+            console.warn('Failed to update resource generation mode:', err);
+          });
+      },
 
       togglePanel: panel => {
         set(state => {
@@ -1682,6 +2037,8 @@ export const useGameStore = create<GameStore>()(
             ...state.soloModeStats,
             totalEncounters: state.soloModeStats.totalEncounters + 1,
           },
+          currentEncounterStartTime: Date.now(),
+          piecesLostThisEncounter: 0,
           autoBattleSystem,
           gameLog: [
             'New Encounter: Temporal Nexus',
@@ -1712,64 +2069,13 @@ export const useGameStore = create<GameStore>()(
           }
         }
 
-        const baseReward = victory ? 15 : 3;
-        const bonusShards = victory && Math.random() < 0.25 ? 1 : 0;
-
-        let outcomeMessage: string;
-        if (victory) {
-          outcomeMessage = `Victory! 15 MD${bonusShards > 0 ? ` & ${bonusShards} AS!` : '.'}`;
-        } else {
-          outcomeMessage = 'Defeat. 3 MD.';
-        }
-
-        set({
-          resources: {
-            ...state.resources,
-            mnemonicDust: state.resources.mnemonicDust + baseReward,
-            aetherShards: state.resources.aetherShards + bonusShards,
-          },
-          soloModeStats: {
-            ...state.soloModeStats,
-            encountersWon: victory
-              ? state.soloModeStats.encountersWon + 1
-              : state.soloModeStats.encountersWon,
-            encountersLost: victory
-              ? state.soloModeStats.encountersLost
-              : state.soloModeStats.encountersLost + 1,
-          },
+        // Use shared encounter resolution logic
+        get().handleEncounterResolution(victory, 'auto');
+        // Append concluding narrative line and clear autoBattleSystem
+        set(s => ({
           autoBattleSystem: null,
-          gameLog: [...state.gameLog, outcomeMessage, 'The timeline stabilizes... for now.'],
-        });
-
-        // Track achievements for game completion
-        if (victory) {
-          const newWinStreak = state.soloModeStats.encountersWon + 1;
-          const totalWins = state.soloModeStats.encountersWon + 1;
-
-          // Track game win achievements
-          try {
-            progressTracker
-              .trackGameWin({
-                winStreak: newWinStreak,
-                totalWins: totalWins,
-                gameDuration: undefined, // Could be tracked if we had timing
-                piecesLost: undefined, // Could be tracked if we had piece loss counting
-                materialDown: undefined, // Could be tracked if we had material advantage tracking
-              })
-              .catch(err => console.warn('Failed to track game win achievements:', err));
-          } catch (err) {
-            console.warn('Progress tracker not available for achievement tracking:', err);
-          }
-        }
-
-        // Track resource tycoon achievement
-        try {
-          progressTracker
-            .trackResourceTycoon(state.resources.temporalEssence)
-            .catch(err => console.warn('Failed to track resource tycoon achievement:', err));
-        } catch (err) {
-          console.warn('Progress tracker not available for resource tycoon tracking:', err);
-        }
+          gameLog: [...s.gameLog, 'The timeline stabilizes... for now.'],
+        }));
 
         // If a save was requested during the encounter, perform it now
         setTimeout(() => {
@@ -1796,6 +2102,8 @@ export const useGameStore = create<GameStore>()(
             encountersWon: 0,
             encountersLost: 0,
             totalEncounters: 0,
+            currentWinStreak: 0,
+            bestWinStreak: 0,
           },
         }));
       },
@@ -2250,6 +2558,18 @@ export const useGameStore = create<GameStore>()(
               console.warn('Progress tracker not available for evolution tracking:', err);
             }
 
+            // Update generation rates if this evolution affects resource generation
+            if (
+              (pieceType === 'pawn' && attribute === 'marchSpeed') ||
+              (pieceType === 'queen' && attribute === 'manaRegenBonus')
+            ) {
+              try {
+                get().updateGenerationRates();
+              } catch (err) {
+                console.warn('Failed to update generation rates after evolution:', err);
+              }
+            }
+
             return true;
           } else {
             console.error(`❌ Failed to spend resources for ${pieceType} ${attribute}`);
@@ -2345,6 +2665,8 @@ export const useGameStore = create<GameStore>()(
             ...state.soloModeStats,
             totalEncounters: state.soloModeStats.totalEncounters + 1,
           },
+          currentEncounterStartTime: Date.now(),
+          piecesLostThisEncounter: 0,
         });
 
         try {
@@ -2387,32 +2709,9 @@ export const useGameStore = create<GameStore>()(
           }
         }
 
-        // Award resources based on outcome
+        // Award resources & track achievements through shared helper
         if (victory !== undefined) {
-          const baseReward = victory ? 15 : 3;
-          const bonusShards = victory && Math.random() < 0.25 ? 1 : 0;
-
-          set({
-            resources: {
-              ...state.resources,
-              mnemonicDust: state.resources.mnemonicDust + baseReward,
-              aetherShards: state.resources.aetherShards + bonusShards,
-            },
-            soloModeStats: {
-              ...state.soloModeStats,
-              encountersWon: victory
-                ? state.soloModeStats.encountersWon + 1
-                : state.soloModeStats.encountersWon,
-              encountersLost: victory
-                ? state.soloModeStats.encountersLost
-                : state.soloModeStats.encountersLost + 1,
-            },
-          });
-
-          const outcomeMessage = victory
-            ? `Victory! ${baseReward} MD${bonusShards > 0 ? ` & ${bonusShards} AS!` : '.'}`
-            : `Defeat. ${baseReward} MD.`;
-          get().addToGameLog(outcomeMessage);
+          get().handleEncounterResolution(victory, 'manual');
         }
 
         set({
@@ -2448,6 +2747,122 @@ export const useGameStore = create<GameStore>()(
             renderer.clearAllHighlights();
           }
         }, 100);
+      },
+
+      // Shared encounter resolution logic for auto & manual modes
+      handleEncounterResolution: (victory: boolean, _source: 'auto' | 'manual') => {
+        const state = get();
+        const baseReward = victory ? 15 : 3;
+        const bonusShards = victory && Math.random() < 0.25 ? 1 : 0;
+        const startTime = state.currentEncounterStartTime;
+        const gameDuration = startTime ? Date.now() - startTime : undefined;
+
+        // Compute updated win/loss & streak stats
+        const prevStats = state.soloModeStats;
+        const encountersWon = victory ? prevStats.encountersWon + 1 : prevStats.encountersWon;
+        const encountersLost = victory ? prevStats.encountersLost : prevStats.encountersLost + 1;
+        const currentWinStreak = victory ? prevStats.currentWinStreak + 1 : 0;
+        const bestWinStreak = Math.max(prevStats.bestWinStreak, currentWinStreak);
+
+        set({
+          soloModeStats: {
+            ...prevStats,
+            encountersWon,
+            encountersLost,
+            currentWinStreak,
+            bestWinStreak,
+          },
+        });
+
+        // Award resources via updateResources so achievement/resource tracking triggers
+        const newMD = state.resources.mnemonicDust + baseReward;
+        const newAS = state.resources.aetherShards + bonusShards;
+        get().updateResources({ mnemonicDust: newMD, aetherShards: newAS });
+
+        const outcomeMessage = victory
+          ? `Victory! ${baseReward} MD${bonusShards > 0 ? ` & ${bonusShards} AS!` : '.'}`
+          : `Defeat. ${baseReward} MD.`;
+        get().addToGameLog(outcomeMessage);
+
+        // Achievements: only for wins
+        if (victory) {
+          try {
+            progressTracker
+              .trackGameWin({
+                winStreak: currentWinStreak,
+                totalWins: encountersWon,
+                gameDuration,
+                piecesLost: get().piecesLostThisEncounter,
+                materialDown: undefined,
+              })
+              .catch(err => console.warn('Failed to track game win achievements:', err));
+          } catch (err) {
+            console.warn('Progress tracker not available for achievement tracking:', err);
+          }
+        } else {
+          // Ensure losses still count toward total games played in local statistics
+          try {
+            progressTracker
+              .updateStatistic('gamesPlayed', 1)
+              .catch(err => console.warn('Failed to track played game (loss):', err));
+          } catch (err) {
+            console.warn('Progress tracker not available for loss tracking:', err);
+          }
+        }
+
+        // Track resource tycoon achievement opportunistically (after resource update)
+        try {
+          progressTracker
+            .trackResourceTycoon(get().resources.temporalEssence)
+            .catch(err => console.warn('Failed to track resource tycoon achievement:', err));
+        } catch (err) {
+          console.warn('Progress tracker not available for resource tycoon tracking:', err);
+        }
+
+        // Cloud profile XP/level update (non-blocking)
+        (async () => {
+          try {
+            const { getCurrentUser } = await import('../lib/supabaseAuth');
+            const user = await getCurrentUser();
+            if (!user) return; // guest, skip cloud XP
+
+            const { updateGameStats } = await import('../lib/profileService');
+            const xp = computeEncounterXP({ victory, gameDuration, currentWinStreak });
+            await updateGameStats(user.id, victory ? 'win' : 'loss', xp);
+
+            try {
+              showToast(`+${xp} XP`, { level: 'success' });
+            } catch {}
+
+            // Notify UI listeners to refresh profile widgets
+            try {
+              const evt = new CustomEvent('profile:updated');
+              window.dispatchEvent(evt);
+            } catch {}
+          } catch (err) {
+            // Silent failure to avoid disrupting gameplay
+            console.warn('Profile XP update skipped/failed:', err);
+          }
+        })();
+
+        return { outcomeMessage, baseReward, bonusShards, currentWinStreak, bestWinStreak };
+      },
+
+      updatePiecesLost: () => {
+        try {
+          const board = chessEngine.chess.board();
+          let whiteCount = 0;
+          for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+              const piece = board[r][c];
+              if (piece && (piece as any).color === 'w') whiteCount++;
+            }
+          }
+          const lost = 16 - whiteCount; // Standard starting white pieces
+          set({ piecesLostThisEncounter: lost < 0 ? 0 : lost });
+        } catch (err) {
+          // non-fatal
+        }
       },
 
       selectSquareForMove: (square: string | null) => {
@@ -4018,13 +4433,23 @@ export const useGameStore = create<GameStore>()(
                   }
                 });
 
+                // Additional legality filter: remove enhanced moves the engine deems illegal
+                const cooldownFiltered = filteredNormalized.filter((m: any) => {
+                  if (!m.enhanced) return true;
+                  try {
+                    return chessEngine.isEnhancedMoveLegal(m.from as any, m.to as any);
+                  } catch {
+                    return false;
+                  }
+                });
+
                 // Ensure canonical moves are present
-                const dests = new Set(filteredNormalized.map((m: any) => m.to));
+                const dests = new Set(cooldownFiltered.map((m: any) => m.to));
                 for (const c of canonical) {
                   if (!dests.has(c.to)) filteredNormalized.push(c);
                 }
 
-                return filteredNormalized;
+                return cooldownFiltered;
               } catch (err) {
                 console.warn(
                   'Failed to filter engine-side enhanced moves against store evolutions:',
@@ -4462,18 +4887,27 @@ export const useGameStore = create<GameStore>()(
             // Enhanced pawn moves
             const pawnMoves = get().generateEnhancedPawnMoves(square, state.pieceEvolutions.pawn);
             console.log(`💪 Generated ${pawnMoves.length} pawn moves:`, pawnMoves);
-
+            // Tagging: mark diagonal as 'breakthrough', straight 2-step as 'enhanced-march'
+            const file = square.charCodeAt(0) - 97;
+            const rank = parseInt(square[1]) - 1;
+            const oneUp = String.fromCharCode(97 + file) + (rank + 2);
             pawnMoves.forEach(move => {
               if (!enhancedMoves.some(m => m.to === move)) {
+                const isDiagonal = move[0] !== square[0];
+                const abilityId = isDiagonal
+                  ? 'breakthrough'
+                  : move === oneUp
+                    ? 'enhanced-march'
+                    : undefined;
                 const enhancedMove = {
                   from: square,
                   to: move,
                   san: move,
                   flags: '',
-                  enhanced: 'breakthrough',
-                };
+                  enhanced: abilityId,
+                } as any;
                 enhancedMoves.push(enhancedMove);
-                console.log(`✨ Added breakthrough move: ${move}`);
+                console.log(`✨ Added pawn enhanced move: ${move} (${abilityId || 'none'})`);
               }
             });
             break;
@@ -4593,11 +5027,10 @@ export const useGameStore = create<GameStore>()(
         switch (ability.id) {
           case 'enhanced-march':
             if (pieceType === 'p') {
-              // Enhanced pawn can move 2 squares forward even from non-starting positions
+              // Single 2-step forward only (nerfed)
               const newRank = rank + 2;
-              if (newRank < 8) {
+              if (newRank < 8)
                 moves.push({ to: String.fromCharCode(97 + file) + (newRank + 1), flags: '' });
-              }
             }
             break;
           case 'diagonal-move':
@@ -4664,34 +5097,16 @@ export const useGameStore = create<GameStore>()(
           }
           case 'breakthrough':
             if (pieceType === 'p') {
-              // Pawn can move through enemy pieces and diagonally
+              // Single-step diagonal forward (nerfed) + forward capture if enemy directly ahead
               const newRank = rank + 1;
               if (newRank < 8) {
-                moves.push({ to: String.fromCharCode(97 + file) + (newRank + 1), flags: '' });
                 if (file > 0)
-                  moves.push({
-                    to: String.fromCharCode(97 + file - 1) + (newRank + 1),
-                    flags: 'c',
-                  });
+                  moves.push({ to: String.fromCharCode(97 + file - 1) + (newRank + 1), flags: '' });
                 if (file < 7)
-                  moves.push({
-                    to: String.fromCharCode(97 + file + 1) + (newRank + 1),
-                    flags: 'c',
-                  });
-              }
-              // Extended breakthrough - 2 squares diagonally
-              const extendedRank = rank + 2;
-              if (extendedRank < 8) {
-                if (file > 0)
-                  moves.push({
-                    to: String.fromCharCode(97 + file - 1) + (extendedRank + 1),
-                    flags: 'c',
-                  });
-                if (file < 7)
-                  moves.push({
-                    to: String.fromCharCode(97 + file + 1) + (extendedRank + 1),
-                    flags: 'c',
-                  });
+                  moves.push({ to: String.fromCharCode(97 + file + 1) + (newRank + 1), flags: '' });
+                // candidate forward capture; engine legality filter will remove if no enemy
+                const forward = String.fromCharCode(97 + file) + (newRank + 1);
+                moves.push({ to: forward, flags: 'c' });
               }
             }
             break;
@@ -5020,16 +5435,17 @@ export const useGameStore = create<GameStore>()(
         const file = square.charCodeAt(0) - 97;
         const rank = parseInt(square[1]) - 1;
 
-        // Enhanced pawn moves based on evolution
-        if (pawnEvolution?.breakthroughChance > 0) {
-          // Can move diagonally forward
+        // Enhanced pawn moves based on evolution (store-backed gating)
+        // Diagonal forward without capture requires resilience > 0
+        if (pawnEvolution && (pawnEvolution.resilience || 0) > 0) {
           if (file > 0 && rank < 7) moves.push(String.fromCharCode(97 + file - 1) + (rank + 2));
           if (file < 7 && rank < 7) moves.push(String.fromCharCode(97 + file + 1) + (rank + 2));
         }
 
-        if (pawnEvolution?.marchDistance > 1) {
-          // Can move multiple squares forward
-          for (let i = 2; i <= pawnEvolution.marchDistance && rank + i < 8; i++) {
+        // Multi-square forward march requires marchSpeed > 1
+        if (pawnEvolution && (pawnEvolution.marchSpeed || 1) > 1) {
+          const maxSteps = Math.min(2, 1 + (pawnEvolution.marchSpeed - 1));
+          for (let i = 2; i <= maxSteps && rank + i < 8; i++) {
             moves.push(String.fromCharCode(97 + file) + (rank + i + 1));
           }
         }
@@ -5041,14 +5457,11 @@ export const useGameStore = create<GameStore>()(
         const moves: string[] = [];
         const file = square.charCodeAt(0) - 97;
         const rank = parseInt(square[1]) - 1;
-
-        // Breakthrough: can move through pieces
+        // Only single-step diagonal forward (nerfed)
         if (rank < 7) {
-          moves.push(String.fromCharCode(97 + file) + (rank + 2)); // Forward
-          if (file > 0) moves.push(String.fromCharCode(97 + file - 1) + (rank + 2)); // Diagonal left
-          if (file < 7) moves.push(String.fromCharCode(97 + file + 1) + (rank + 2)); // Diagonal right
+          if (file > 0) moves.push(String.fromCharCode(97 + file - 1) + (rank + 2));
+          if (file < 7) moves.push(String.fromCharCode(97 + file + 1) + (rank + 2));
         }
-
         return moves;
       },
 
@@ -5878,6 +6291,49 @@ export const useGameStore = create<GameStore>()(
       },
 
       // Utility actions
+      updateGenerationRates: () => {
+        const state = get();
+        const evolutions = state.pieceEvolutions;
+
+        // Calculate bonuses based on piece evolutions
+        let teBonus = 0;
+        let manaBonus = BASE_MANA_RATE;
+
+        if (evolutions.pawn) {
+          teBonus += evolutions.pawn.marchSpeed * PAWN_MARCH_TE_MULTIPLIER;
+        }
+
+        if (evolutions.queen) {
+          manaBonus += evolutions.queen.manaRegenBonus;
+        }
+
+        const updatedRates = {
+          temporalEssence: DEFAULT_GENERATION_RATES.temporalEssence + teBonus,
+          mnemonicDust: DEFAULT_GENERATION_RATES.mnemonicDust,
+          arcaneMana: manaBonus,
+          aetherShards: 0,
+        };
+
+        // Update store's generation rates
+        set(state => ({
+          resources: {
+            ...state.resources,
+            generationRates: updatedRates,
+          },
+        }));
+
+        // Also update the ResourceManager's internal rates to keep them in sync
+        try {
+          Object.entries(updatedRates).forEach(([resource, rate]) => {
+            resourceManager.updateGenerationRate(resource, rate);
+          });
+        } catch (err) {
+          console.warn('Failed to sync ResourceManager generation rates:', err);
+        }
+
+        console.log('🔄 Updated generation rates:', updatedRates);
+      },
+
       reset: () => {
         // Clear auto-save timer
         if (autoSaveTimer) {
@@ -5910,6 +6366,8 @@ export const useGameStore = create<GameStore>()(
             encountersWon: 0,
             encountersLost: 0,
             totalEncounters: 0,
+            currentWinStreak: 0,
+            bestWinStreak: 0,
           },
           gameMode: 'auto',
           isManualGameActive: false,
@@ -5977,6 +6435,7 @@ export const useResourceSystem = () =>
     awardResources: state.awardResources,
     startResourceGeneration: state.startResourceGeneration,
     stopResourceGeneration: state.stopResourceGeneration,
+    setResourceGenerationStandby: state.setResourceGenerationStandby,
   }));
 
 // Evolution utilities

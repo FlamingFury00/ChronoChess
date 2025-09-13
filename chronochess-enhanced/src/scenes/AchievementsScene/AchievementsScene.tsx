@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../../components/common';
 import { progressTracker } from '../../save/ProgressTracker';
+import { claimAchievement } from '../../components/common/achievementClaimService';
 import { useGameStore } from '../../store';
 import { showToast } from '../../components/common/toastService';
 import type { SceneProps } from '../types';
@@ -16,8 +17,6 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   const [progressMap, setProgressMap] = useState<
     Record<string, { current: number; target: number; unit: string }>
   >({});
-
-  const { updateResources } = useGameStore();
 
   useEffect(() => {
     loadAchievements();
@@ -153,34 +152,39 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         return;
       }
 
-      // Calculate total rewards
-      const totalShards = unclaimedAchievements.reduce((total, achievement) => {
-        return total + (achievement.reward?.aetherShards || 0);
-      }, 0);
-
-      // Mark all unclaimed achievements as claimed
+      // Mark all unclaimed achievements as claimed (this will also award resources via claim handler)
+      // Use centralized claim service so reward awarding logic is consistent
       const claimPromises = unclaimedAchievements.map(achievement =>
-        progressTracker.markAchievementClaimed(achievement.id)
+        claimAchievement({
+          ...achievement,
+          unlockedTimestamp:
+            achievements.find(a => a.id === achievement.id)?.unlockedTimestamp || Date.now(),
+          claimed: false,
+          category: achievement.category,
+          rarity: achievement.rarity,
+        } as any)
       );
 
-      await Promise.all(claimPromises);
+      const results = await Promise.allSettled(claimPromises);
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
 
-      // Update resources in game store
-      updateResources({
-        aetherShards: totalShards,
-      });
+      // Calculate actual awarded shards based on successful claims
+      const actualShards = unclaimedAchievements
+        .slice(0, successCount)
+        .reduce((total, achievement) => total + (achievement.reward?.aetherShards || 0), 0);
 
       // Reload achievements to reflect changes
       await loadAchievements();
 
       // Show success message
-      showToast(
-        `🎉 Claimed ${totalShards} Aether Shards from ${unclaimedAchievements.length} achievements!`,
-        {
+      if (successCount > 0) {
+        showToast(`🎉 Claimed ${actualShards} Aether Shards from ${successCount} achievements!`, {
           level: 'success',
           duration: 5000,
-        }
-      );
+        });
+      } else {
+        showToast('Failed to claim achievements. Please try again.', { level: 'error' });
+      }
     } catch (error) {
       console.error('Failed to claim rewards:', error);
       showToast('Failed to claim rewards. Please try again.', { level: 'error' });
@@ -196,15 +200,20 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     setClaimingMap(prev => ({ ...prev, [achievement.id]: true }));
 
     try {
-      const success = await progressTracker.markAchievementClaimed(achievement.id);
-      if (!success) {
+      // Use centralized claim service (includes progress tracker + rewards)
+      const before = achievements.find(a => a.id === achievement.id)?.claimed;
+      await claimAchievement({
+        ...achievement,
+        unlockedTimestamp: achievement.unlockedTimestamp || Date.now(),
+        claimed: !!before,
+        category: achievement.category,
+        rarity: achievement.rarity,
+      } as any);
+      const afterState = await progressTracker.getAchievements();
+      const after = afterState.find(a => a.id === achievement.id)?.claimed;
+      if (after === before) {
         showToast('Unable to claim this achievement (may already be claimed)', { level: 'info' });
         return;
-      }
-
-      // Award reward immediately to the store
-      if (achievement.reward && (achievement.reward.aetherShards || 0) > 0) {
-        updateResources({ aetherShards: achievement.reward.aetherShards || 0 });
       }
 
       // Optimistically update UI; claimed listener will also update
@@ -212,7 +221,8 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         prev.map(p => (p.id === achievement.id ? { ...p, claimed: true } : p))
       );
 
-      showToast(`\ud83c\udf89 Claimed ${achievement.reward?.aetherShards || 0} Aether Shards!`, {
+      const rewardAmount = achievement.reward?.aetherShards || 0;
+      showToast(`\ud83c\udf89 Claimed ${rewardAmount} Aether Shards!`, {
         level: 'success',
       });
     } catch (err) {
@@ -227,268 +237,7 @@ export const AchievementsScene: React.FC<SceneProps> = ({ onSceneChange }) => {
     }
   };
 
-  const getAllAchievements = () => {
-    // Get all achievement definitions from ProgressTracker
-    const definitions = [
-      // Gameplay Achievements
-      {
-        id: 'first_win',
-        name: 'First Victory',
-        description: 'Win your first solo mode encounter',
-        category: 'gameplay' as const,
-        rarity: 'common' as const,
-        reward: { aetherShards: 5 },
-      },
-      {
-        id: 'win_streak_5',
-        name: 'Winning Streak',
-        description: 'Win 5 encounters in a row',
-        category: 'gameplay' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 15 },
-      },
-      {
-        id: 'win_streak_10',
-        name: 'Unstoppable',
-        description: 'Win 10 encounters in a row',
-        category: 'gameplay' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 30 },
-      },
-      {
-        id: 'total_wins_25',
-        name: 'Veteran Warrior',
-        description: 'Win 25 total encounters',
-        category: 'gameplay' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 20 },
-      },
-      {
-        id: 'total_wins_100',
-        name: 'Legendary Champion',
-        description: 'Win 100 total encounters',
-        category: 'gameplay' as const,
-        rarity: 'legendary' as const,
-        reward: { aetherShards: 100 },
-      },
-      {
-        id: 'elegant_checkmate',
-        name: 'Elegant Victory',
-        description: 'Achieve checkmate with an elegant move',
-        category: 'gameplay' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 25 },
-      },
-
-      // Evolution Achievements
-      {
-        id: 'first_evolution',
-        name: 'First Evolution',
-        description: 'Evolve your first piece',
-        category: 'evolution' as const,
-        rarity: 'common' as const,
-        reward: { aetherShards: 10 },
-      },
-      {
-        id: 'pawn_master',
-        name: 'Pawn Master',
-        description: 'Max out all pawn evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'knight_specialist',
-        name: 'Knight Specialist',
-        description: 'Max out all knight evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'bishop_specialist',
-        name: 'Bishop Specialist',
-        description: 'Max out all bishop evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'rook_specialist',
-        name: 'Rook Specialist',
-        description: 'Max out all rook evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'queen_specialist',
-        name: 'Queen Specialist',
-        description: 'Max out all queen evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'king_specialist',
-        name: 'King Specialist',
-        description: 'Max out all king evolutions',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-      {
-        id: 'complete_evolution',
-        name: 'Evolution Complete',
-        description: 'Max out evolutions for all piece types',
-        category: 'evolution' as const,
-        rarity: 'legendary' as const,
-        reward: { aetherShards: 200 },
-      },
-      {
-        id: 'evolution_explorer',
-        name: 'Evolution Explorer',
-        description: 'Unlock 10 different evolution paths',
-        category: 'evolution' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 35 },
-      },
-
-      // Resource Achievements
-      {
-        id: 'resource_collector',
-        name: 'Resource Collector',
-        description: 'Accumulate 1000 Temporal Essence',
-        category: 'special' as const,
-        rarity: 'common' as const,
-        reward: { aetherShards: 10 },
-      },
-      {
-        id: 'wealth_accumulator',
-        name: 'Wealth Accumulator',
-        description: 'Accumulate 10000 Temporal Essence',
-        category: 'special' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 25 },
-      },
-      {
-        id: 'temporal_lord',
-        name: 'Temporal Lord',
-        description: 'Accumulate 100000 Temporal Essence',
-        category: 'special' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 75 },
-      },
-      {
-        id: 'resource_tycoon',
-        name: 'Resource Tycoon',
-        description: 'Accumulate 1 million Temporal Essence',
-        category: 'special' as const,
-        rarity: 'legendary' as const,
-        reward: { aetherShards: 150 },
-      },
-      {
-        id: 'dust_collector',
-        name: 'Dust Collector',
-        description: 'Accumulate 500 Mnemonic Dust',
-        category: 'special' as const,
-        rarity: 'common' as const,
-        reward: { aetherShards: 10 },
-      },
-      {
-        id: 'dust_master',
-        name: 'Dust Master',
-        description: 'Accumulate 5000 Mnemonic Dust',
-        category: 'special' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 25 },
-      },
-
-      // Special Achievements
-      {
-        id: 'speed_demon',
-        name: 'Speed Demon',
-        description: 'Complete an encounter in under 30 seconds',
-        category: 'special' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 20 },
-      },
-      {
-        id: 'perfectionist',
-        name: 'Perfectionist',
-        description: 'Win an encounter without losing any pieces',
-        category: 'special' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 40 },
-      },
-      {
-        id: 'comeback_king',
-        name: 'Comeback King',
-        description: 'Win an encounter while down in material',
-        category: 'special' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 30 },
-      },
-      {
-        id: 'time_master',
-        name: 'Time Master',
-        description: 'Play for 10 hours total',
-        category: 'special' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 60 },
-      },
-      {
-        id: 'marathon_player',
-        name: 'Marathon Player',
-        description: 'Play for 24 hours total',
-        category: 'special' as const,
-        rarity: 'legendary' as const,
-        reward: { aetherShards: 200 },
-      },
-      {
-        id: 'combo_master',
-        name: 'Combo Master',
-        description: 'Execute a 5-move combo in manual mode',
-        category: 'special' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 25 },
-      },
-      {
-        id: 'strategic_genius',
-        name: 'Strategic Genius',
-        description: 'Win with only pawns and king remaining',
-        category: 'special' as const,
-        rarity: 'legendary' as const,
-        reward: { aetherShards: 100 },
-      },
-      {
-        id: 'powerful_combination',
-        name: 'Power Player',
-        description: 'Create a combination with over 1000 total power',
-        category: 'evolution' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 20 },
-      },
-      {
-        id: 'synergy_master',
-        name: 'Synergy Master',
-        description: 'Discover a combination with synergy bonuses',
-        category: 'evolution' as const,
-        rarity: 'rare' as const,
-        reward: { aetherShards: 30 },
-      },
-      {
-        id: 'combination_collector',
-        name: 'Combination Collector',
-        description: 'Discover 100 unique evolution combinations',
-        category: 'evolution' as const,
-        rarity: 'epic' as const,
-        reward: { aetherShards: 50 },
-      },
-    ];
-
-    return definitions;
-  };
+  const getAllAchievements = () => progressTracker.getAllAchievementDefinitions();
 
   const getFilteredAchievements = () => {
     const allAchievements = getAllAchievements();

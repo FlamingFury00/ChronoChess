@@ -304,6 +304,9 @@ describe('Achievement System', () => {
     });
 
     it('should have correct rarity distribution', async () => {
+      // Clear any existing snapshots to avoid interference from previous tests
+      localStorage.removeItem('chronochess_achievements_snapshot');
+
       // Unlock multiple achievements
       await progressTracker.unlockAchievement('first_win'); // common
       await progressTracker.unlockAchievement('first_evolution'); // common
@@ -316,7 +319,20 @@ describe('Achievement System', () => {
 
       const achievements = await progressTracker.getAchievements();
 
-      const rarityCounts = achievements.reduce(
+      // Filter to only count the achievements we just unlocked
+      const testAchievementIds = [
+        'first_win',
+        'first_evolution',
+        'win_streak_5',
+        'total_wins_25',
+        'pawn_master',
+        'perfectionist',
+        'total_wins_100',
+        'strategic_genius',
+      ];
+      const testAchievements = achievements.filter(a => testAchievementIds.includes(a.id));
+
+      const rarityCounts = testAchievements.reduce(
         (counts, achievement) => {
           counts[achievement.rarity] = (counts[achievement.rarity] || 0) + 1;
           return counts;

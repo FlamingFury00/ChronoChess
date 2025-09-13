@@ -11,6 +11,12 @@ export class ProgressTracker {
   private combinationCache: Map<string, EvolutionCombination> = new Map();
   private statisticsCache: PlayerStatistics | null = null;
   private achievementsCache: Achievement[] = [];
+  // Track in-flight claim operations to make claiming idempotent and prevent
+  // race conditions (e.g. double clicking claim buttons or claim-all + single claim)
+  private inFlightClaims: Set<string> = new Set();
+  // Pending claimed achievements that have not yet been confirmed persisted in IndexedDB.
+  // Stored redundantly in localStorage to survive reloads mid-persistence.
+  private pendingClaimed: Set<string> = new Set();
   private isInitialized = false;
   // Promise used to serialize/track initialization so concurrent callers can await it
   private initPromise: Promise<void> | null = null;
@@ -29,13 +35,15 @@ export class ProgressTracker {
   private claimedFallbackKey = 'chronochess_claimed_fallback';
 
   constructor() {
+    // Always use the singleton saveDatabase instance to ensure persistence
+    // across multiple ProgressTracker instances
     this.db = saveDatabase;
   }
 
   /**
    * Persist an achievement to the database with a small retry loop.
    */
-  private async persistAchievementWithRetries(achievement: Achievement): Promise<void> {
+  private async persistAchievementWithRetries(achievement: Achievement): Promise<boolean> {
     const maxAttempts = 3;
     let attempt = 0;
     let lastErr: any = null;
@@ -47,10 +55,15 @@ export class ProgressTracker {
         try {
           this.removePendingAchievementFromLocalStorage(achievement.id);
           this.removeClaimedFlagFromLocalStorage(achievement.id);
+          // Only clean up snapshot for unclaimed achievements.
+          // Claimed achievements should remain in snapshot to survive page reloads.
+          if (!achievement.claimed) {
+            this.cleanupSnapshotEntry(achievement.id);
+          }
         } catch (err) {
           // non-fatal
         }
-        return;
+        return true;
       } catch (err) {
         lastErr = err;
         attempt++;
@@ -66,6 +79,7 @@ export class ProgressTracker {
     } catch (err) {
       console.error('Failed to save pending achievement to localStorage:', err, lastErr);
     }
+    return false;
   }
 
   private savePendingAchievementToLocalStorage(achievement: Achievement): void {
@@ -191,6 +205,25 @@ export class ProgressTracker {
     }
   }
 
+  private cleanupSnapshotEntry(achievementId: string): void {
+    try {
+      if (typeof localStorage === 'undefined' || localStorage === null) return;
+      const raw = localStorage.getItem('chronochess_achievements_snapshot');
+      if (!raw) return;
+
+      const snapshot = JSON.parse(raw);
+      if (Array.isArray(snapshot)) {
+        const filtered = snapshot.filter(entry => entry.id !== achievementId);
+        if (filtered.length !== snapshot.length) {
+          localStorage.setItem('chronochess_achievements_snapshot', JSON.stringify(filtered));
+          console.log(`Cleaned up snapshot entry for persisted achievement: ${achievementId}`);
+        }
+      }
+    } catch (err) {
+      // ignore cleanup errors
+    }
+  }
+
   private loadAchievementsSnapshotFromLocalStorage(): Array<{
     id: string;
     unlockedTimestamp: number | null;
@@ -296,9 +329,21 @@ export class ProgressTracker {
         console.log('📊 Initializing progress database...');
         await this.db.initialize();
 
+        // Load pending claimed set early so subsequent cache loading can apply it
+        this.loadPendingClaimedFromLocalStorage();
+
         // Load cached data
         console.log('📊 Loading cached progress data...');
         await this.loadCachedData();
+
+        // Merge cloud achievements snapshot (if authenticated) BEFORE marking initialized
+        // so reconciliation does not re-unlock already claimed achievements that only
+        // existed in the cloud.
+        try {
+          await this.mergeCloudAchievementsSnapshot();
+        } catch (err) {
+          console.warn('Failed to merge cloud achievements snapshot (non-fatal):', err);
+        }
 
         // Mark initialized before reconciliation to avoid deadlocks: reconciliation
         // may call unlockAchievement which checks initialization.
@@ -318,8 +363,20 @@ export class ProgressTracker {
         try {
           console.log('📊 Flushing pending achievements...');
           await this.flushPendingAchievements();
+
+          // After flushing, check if all cached achievements are now persisted
+          // and clean up the snapshot if they are
+          this.cleanupSnapshotIfAllPersisted();
         } catch (err) {
           console.warn('Failed to flush pending achievements during init:', err);
+        } // Apply any pending claimed flags (if achievements were reconstructed without claimed true)
+        this.applyPendingClaimFlags();
+
+        // Ensure achievements are backed up to cloud if they exist locally but not in cloud
+        try {
+          await this.ensureAchievementsBackedUpToCloud();
+        } catch (err) {
+          console.warn('Failed to backup achievements to cloud (non-fatal):', err);
         }
 
         console.log('✅ ProgressTracker initialized successfully');
@@ -352,37 +409,39 @@ export class ProgressTracker {
       const storage = await this.getProgressStorageInfo();
 
       // Gameplay achievements from statistics
-      if (stats.gamesWon >= 1) await this.unlockAchievement('first_win');
-      if (stats.gamesWon >= 25) await this.unlockAchievement('total_wins_25');
-      if (stats.gamesWon >= 100) await this.unlockAchievement('total_wins_100');
+      if (stats.gamesWon >= 1) await this.unlockAchievementIfEligible('first_win');
+      if (stats.gamesWon >= 25) await this.unlockAchievementIfEligible('total_wins_25');
+      if (stats.gamesWon >= 100) await this.unlockAchievementIfEligible('total_wins_100');
 
       // Time-based
-      if (stats.totalPlayTime >= 10 * 60 * 60 * 1000) await this.unlockAchievement('time_master');
+      if (stats.totalPlayTime >= 10 * 60 * 60 * 1000)
+        await this.unlockAchievementIfEligible('time_master');
       if (stats.totalPlayTime >= 24 * 60 * 60 * 1000)
-        await this.unlockAchievement('marathon_player');
+        await this.unlockAchievementIfEligible('marathon_player');
 
       // Evolution achievements
-      if (stats.evolutionCombinationsUnlocked >= 1) await this.unlockAchievement('first_evolution');
+      if (stats.evolutionCombinationsUnlocked >= 1)
+        await this.unlockAchievementIfEligible('first_evolution');
 
       // Combination-based achievements: we can check stored combinations
       const combos = await this.getAllCombinations();
       if (combos.some(c => c.totalPower > 1000))
-        await this.unlockAchievement('powerful_combination');
+        await this.unlockAchievementIfEligible('powerful_combination');
       if (combos.some(c => Array.isArray(c.synergyBonuses) && c.synergyBonuses.length > 0))
-        await this.unlockAchievement('synergy_master');
+        await this.unlockAchievementIfEligible('synergy_master');
       if ((storage.combinationsCount || combos.length) >= 100)
-        await this.unlockAchievement('combination_collector');
+        await this.unlockAchievementIfEligible('combination_collector');
 
       // Resource achievements can be reconciled if a resources snapshot is provided
       if (resourcesSnapshot) {
         const te = resourcesSnapshot.temporalEssence || 0;
         const md = resourcesSnapshot.mnemonicDust || 0;
-        if (te >= 1000) await this.unlockAchievement('resource_collector');
-        if (te >= 10000) await this.unlockAchievement('wealth_accumulator');
-        if (te >= 100000) await this.unlockAchievement('temporal_lord');
-        if (te >= 1000000) await this.unlockAchievement('resource_tycoon');
-        if (md >= 500) await this.unlockAchievement('dust_collector');
-        if (md >= 5000) await this.unlockAchievement('dust_master');
+        if (te >= 1000) await this.unlockAchievementIfEligible('resource_collector');
+        if (te >= 10000) await this.unlockAchievementIfEligible('wealth_accumulator');
+        if (te >= 100000) await this.unlockAchievementIfEligible('temporal_lord');
+        if (te >= 1000000) await this.unlockAchievementIfEligible('resource_tycoon');
+        if (md >= 500) await this.unlockAchievementIfEligible('dust_collector');
+        if (md >= 5000) await this.unlockAchievementIfEligible('dust_master');
       }
     } catch (err) {
       console.error('Error during achievement reconciliation:', err);
@@ -390,11 +449,35 @@ export class ProgressTracker {
   }
 
   /**
+   * Helper method to unlock an achievement only if it's not already unlocked or claimed.
+   * This prevents resource achievements from appearing as available to claim on every reload.
+   */
+  private async unlockAchievementIfEligible(achievementId: string): Promise<boolean> {
+    await this.ensureInitialized();
+
+    // Check if already unlocked (and potentially claimed)
+    const existingAchievement = this.achievementsCache.find(a => a.id === achievementId);
+    if (existingAchievement) {
+      // If it exists and is claimed, don't try to unlock again
+      if (existingAchievement.claimed) {
+        console.log(`🔒 Achievement already claimed, skipping: ${achievementId}`);
+        return false;
+      }
+      // If it exists but not claimed, it's already unlocked and available to claim
+      console.log(`ℹ️ Achievement already unlocked but not claimed: ${achievementId}`);
+      return false;
+    }
+
+    // Achievement doesn't exist, so unlock it normally
+    return await this.unlockAchievement(achievementId);
+  }
+
+  /**
    * Ensure the tracker is initialized. Safe to call multiple times from
    * concurrent callers - initialization will only run once and callers will
    * await the same promise.
    */
-  private async ensureInitialized(): Promise<void> {
+  async ensureInitialized(): Promise<void> {
     if (this.isInitialized) return;
 
     // If initialization has started elsewhere, await it. Do NOT start
@@ -617,11 +700,18 @@ export class ProgressTracker {
       console.warn('Failed to write pending achievement to localStorage:', err);
     }
 
+    let persisted = false;
     try {
       console.log(`💾 Persisting unlocked achievement to DB: ${achievementId}`);
-      await this.persistAchievementWithRetries(unlockedAchievement);
+      persisted = await this.persistAchievementWithRetries(unlockedAchievement);
     } catch (err) {
       console.error(`❌ Failed to persist achievement ${achievementId}:`, err);
+    }
+    if (!persisted) {
+      // Ensure snapshot includes it for reload resilience
+      try {
+        this.saveAchievementsSnapshotToLocalStorage();
+      } catch {}
     }
 
     // Notify any registered listener so other systems can react (award currency, UI, analytics)
@@ -638,24 +728,48 @@ export class ProgressTracker {
       console.error('Error while notifying achievement unlock listeners:', err);
     }
 
+    // Fire-and-forget full save to ensure achievement is persisted to cloud
+    try {
+      await this.triggerFullSaveForAchievement('unlock', achievementId);
+    } catch (err) {
+      // non-fatal
+      console.warn('[unlock-sync] Full save failed (non-fatal):', err);
+    }
+
     console.log(`✅ Achievement unlocked: ${achievement.name} (${achievementId})`);
     return true;
   }
 
   /**
    * Mark an unlocked achievement as claimed (persisted).
+   * Returns true only if the achievement was successfully claimed (wasn't already claimed).
    */
   async markAchievementClaimed(achievementId: string): Promise<boolean> {
     await this.ensureInitialized();
 
+    // Prevent concurrent claim attempts
+    if (!this.startClaim(achievementId)) {
+      console.log(`Claim already in progress for ${achievementId}`);
+      return false;
+    }
+    let success = false;
     const idx = this.achievementsCache.findIndex(a => a.id === achievementId);
-    if (idx === -1) return false;
+    if (idx === -1) {
+      console.warn(`Cannot claim achievement ${achievementId}: not found in unlocked achievements`);
+      this.finishClaim(achievementId);
+      return false;
+    }
 
     const ach = this.achievementsCache[idx];
-    if (ach.claimed) return false;
+    if (ach.claimed) {
+      console.log(`Achievement ${achievementId} is already claimed`);
+      return false;
+    }
 
     ach.claimed = true;
     this.achievementsCache[idx] = ach;
+    console.log(`Marking achievement ${achievementId} as claimed`);
+
     // Write claimed flag to localStorage immediately so a refresh will show
     // that the achievement has been claimed.
     try {
@@ -683,16 +797,31 @@ export class ProgressTracker {
       console.warn('Failed to write claimed flag to localStorage:', err);
     }
 
+    let persisted = false;
+    // Mark as pending claim BEFORE attempting persistence so reload preserves claimed state
+    this.trackPendingClaim(achievementId);
     try {
-      await this.persistAchievementWithRetries(ach);
+      // IMMEDIATELY persist claimed achievement to database
+      // This ensures the claimed state is saved to the database right away
+      persisted = await this.persistAchievementWithRetries(ach);
     } catch (err) {
       console.error(`❌ Failed to persist claimed achievement ${achievementId}:`, err);
-      // As a last resort, ensure it's stored in pending fallback so it isn't lost
+    }
+    if (!persisted) {
+      // Ensure pending fallback and snapshot keep claimed state across reloads
       try {
         this.savePendingAchievementToLocalStorage(ach);
-      } catch (err2) {
-        console.error('Failed to save pending claimed achievement to localStorage:', err2);
-      }
+      } catch {}
+      try {
+        this.saveAchievementsSnapshotToLocalStorage();
+      } catch {}
+    } else {
+      // Only remove claimed fallbacks when we KNOW DB has the record
+      try {
+        this.removeClaimedFallbackFromLocalStorage(achievementId);
+        this.removeClaimedFlagFromLocalStorage(achievementId);
+        this.clearPendingClaim(achievementId);
+      } catch {}
     }
     try {
       for (const l of this.achievementClaimedListeners) {
@@ -705,14 +834,17 @@ export class ProgressTracker {
     } catch (err) {
       console.error('Error while notifying achievement claimed listeners:', err);
     }
-    // Remove fallback entries once we have attempted persistence and notified listeners
+    success = true;
+    // Fire-and-forget full save to ensure achievement is persisted to cloud
     try {
-      this.removeClaimedFallbackFromLocalStorage(achievementId);
-      this.removeClaimedFlagFromLocalStorage(achievementId);
-    } catch {
-      // ignore
+      // Await the save to ensure it completes
+      await this.triggerFullSaveForAchievement('claim', achievementId);
+    } catch (err) {
+      // Non-fatal
+      console.warn('Failed to complete full save for claim sync:', err);
     }
-    return true;
+    this.finishClaim(achievementId);
+    return success;
   }
 
   /**
@@ -893,44 +1025,44 @@ export class ProgressTracker {
     // Check for first win achievement
     if (stats.totalWins === 1) {
       console.log(`🎯 Checking for first win achievement...`);
-      await this.unlockAchievement('first_win');
+      await this.unlockAchievementIfEligible('first_win');
     }
 
     // Check for win streak achievements
     if (stats.winStreak >= 5) {
       console.log(`🎯 Checking for win streak 5 achievement...`);
-      await this.unlockAchievement('win_streak_5');
+      await this.unlockAchievementIfEligible('win_streak_5');
     }
     if (stats.winStreak >= 10) {
       console.log(`🎯 Checking for win streak 10 achievement...`);
-      await this.unlockAchievement('win_streak_10');
+      await this.unlockAchievementIfEligible('win_streak_10');
     }
 
     // Check for total wins achievements
     if (stats.totalWins >= 25) {
       console.log(`🎯 Checking for total wins 25 achievement...`);
-      await this.unlockAchievement('total_wins_25');
+      await this.unlockAchievementIfEligible('total_wins_25');
     }
     if (stats.totalWins >= 100) {
       console.log(`🎯 Checking for total wins 100 achievement...`);
-      await this.unlockAchievement('total_wins_100');
+      await this.unlockAchievementIfEligible('total_wins_100');
     }
 
     // Check for special achievements
     if (stats.gameDuration && stats.gameDuration < 30000) {
       // 30 seconds
       console.log(`🎯 Checking for speed demon achievement...`);
-      await this.unlockAchievement('speed_demon');
+      await this.unlockAchievementIfEligible('speed_demon');
     }
 
     if (stats.piecesLost === 0) {
       console.log(`🎯 Checking for perfectionist achievement...`);
-      await this.unlockAchievement('perfectionist');
+      await this.unlockAchievementIfEligible('perfectionist');
     }
 
     if (stats.materialDown) {
       console.log(`🎯 Checking for comeback king achievement...`);
-      await this.unlockAchievement('comeback_king');
+      await this.unlockAchievementIfEligible('comeback_king');
     }
 
     console.log(`✅ trackGameWin completed`);
@@ -952,19 +1084,19 @@ export class ProgressTracker {
     if (resources.temporalEssence) {
       if (resources.temporalEssence >= 1000) {
         console.log(`🎯 Checking for resource collector achievement...`);
-        await this.unlockAchievement('resource_collector');
+        await this.unlockAchievementIfEligible('resource_collector');
       }
       if (resources.temporalEssence >= 10000) {
         console.log(`🎯 Checking for wealth accumulator achievement...`);
-        await this.unlockAchievement('wealth_accumulator');
+        await this.unlockAchievementIfEligible('wealth_accumulator');
       }
       if (resources.temporalEssence >= 100000) {
         console.log(`🎯 Checking for temporal lord achievement...`);
-        await this.unlockAchievement('temporal_lord');
+        await this.unlockAchievementIfEligible('temporal_lord');
       }
       if (resources.temporalEssence >= 1000000) {
         console.log(`🎯 Checking for resource tycoon achievement...`);
-        await this.unlockAchievement('resource_tycoon');
+        await this.unlockAchievementIfEligible('resource_tycoon');
       }
     }
 
@@ -972,11 +1104,11 @@ export class ProgressTracker {
     if (resources.mnemonicDust) {
       if (resources.mnemonicDust >= 500) {
         console.log(`🎯 Checking for dust collector achievement...`);
-        await this.unlockAchievement('dust_collector');
+        await this.unlockAchievementIfEligible('dust_collector');
       }
       if (resources.mnemonicDust >= 5000) {
         console.log(`🎯 Checking for dust master achievement...`);
-        await this.unlockAchievement('dust_master');
+        await this.unlockAchievementIfEligible('dust_master');
       }
     }
 
@@ -1014,7 +1146,7 @@ export class ProgressTracker {
     // Track first evolution achievement
     if (isFirstEvolution) {
       console.log(`🎯 Checking for first evolution achievement...`);
-      await this.unlockAchievement('first_evolution');
+      await this.unlockAchievementIfEligible('first_evolution');
     }
 
     // Track piece mastery achievements - map piece name to correct achievement id
@@ -1030,7 +1162,7 @@ export class ProgressTracker {
 
       const achievementId = pieceToAchievementId[pieceName] || `${pieceName}_master`;
       console.log(`🎯 Checking for piece mastery achievement: ${achievementId}`);
-      await this.unlockAchievement(achievementId);
+      await this.unlockAchievementIfEligible(achievementId);
     }
 
     console.log(`✅ trackPieceEvolution completed`);
@@ -1045,7 +1177,7 @@ export class ProgressTracker {
     const totalHours = totalPlayTimeMs / (1000 * 60 * 60);
 
     if (totalHours >= 10) {
-      await this.unlockAchievement('time_master');
+      await this.unlockAchievementIfEligible('time_master');
     }
   }
 
@@ -1061,15 +1193,15 @@ export class ProgressTracker {
     switch (type) {
       case 'combo':
         if (data?.comboLength >= 5) {
-          await this.unlockAchievement('combo_master');
+          await this.unlockAchievementIfEligible('combo_master');
         }
         break;
       case 'pawn_endgame':
-        await this.unlockAchievement('strategic_genius');
+        await this.unlockAchievementIfEligible('strategic_genius');
         break;
       case 'evolution_paths':
         if (data?.unlockedPaths >= 10) {
-          await this.unlockAchievement('evolution_explorer');
+          await this.unlockAchievementIfEligible('evolution_explorer');
         }
         break;
     }
@@ -1084,10 +1216,10 @@ export class ProgressTracker {
     const totalHours = totalPlayTimeMs / (1000 * 60 * 60);
 
     if (totalHours >= 10) {
-      await this.unlockAchievement('time_master');
+      await this.unlockAchievementIfEligible('time_master');
     }
     if (totalHours >= 24) {
-      await this.unlockAchievement('marathon_player');
+      await this.unlockAchievementIfEligible('marathon_player');
     }
   }
 
@@ -1098,7 +1230,7 @@ export class ProgressTracker {
     await this.ensureInitialized();
 
     if (temporalEssence >= 1000000) {
-      await this.unlockAchievement('resource_tycoon');
+      await this.unlockAchievementIfEligible('resource_tycoon');
     }
   }
 
@@ -1108,7 +1240,7 @@ export class ProgressTracker {
   async trackElegantMove(): Promise<void> {
     await this.ensureInitialized();
 
-    await this.unlockAchievement('elegant_checkmate');
+    await this.unlockAchievementIfEligible('elegant_checkmate');
   }
 
   /**
@@ -1123,15 +1255,15 @@ export class ProgressTracker {
     switch (type) {
       case 'powerful':
         if (data?.power >= 1000) {
-          await this.unlockAchievement('powerful_combination');
+          await this.unlockAchievementIfEligible('powerful_combination');
         }
         break;
       case 'synergy':
-        await this.unlockAchievement('synergy_master');
+        await this.unlockAchievementIfEligible('synergy_master');
         break;
       case 'collector':
         if (data?.totalCombinations >= 100) {
-          await this.unlockAchievement('combination_collector');
+          await this.unlockAchievementIfEligible('combination_collector');
         }
         break;
     }
@@ -1191,7 +1323,10 @@ export class ProgressTracker {
           if (typeof (achievement as any).claimed !== 'boolean') {
             (achievement as any).claimed = false;
           }
+          console.log(`Loaded achievement ${key.id}, claimed: ${(achievement as any).claimed}`);
           this.achievementsCache.push(achievement as Achievement);
+        } else {
+          console.warn(`⚠️ Failed to load achievement data for key: ${key.id}`);
         }
       }
       console.log('✅ Achievements loaded:', this.achievementsCache.length);
@@ -1241,10 +1376,12 @@ export class ProgressTracker {
               if (idx === -1) {
                 // Add fallback claimed achievement to in-memory cache
                 if (typeof (ach as any).claimed !== 'boolean') (ach as any).claimed = true;
+                console.log(`Adding claimed achievement from fallback: ${id}`);
                 this.achievementsCache.push(ach as Achievement);
               } else {
-                // Ensure claimed flag is applied
-                if (!this.achievementsCache[idx].claimed) {
+                // IMPORTANT: Only set claimed to true if fallback says so, never set to false
+                if (!this.achievementsCache[idx].claimed && (ach as any).claimed) {
+                  console.log(`Restoring claimed state for ${id} from fallback`);
                   this.achievementsCache[idx].claimed = true;
                 }
                 // Prefer the newer unlockedTimestamp if present on fallback
@@ -1276,7 +1413,6 @@ export class ProgressTracker {
           const raw = localStorage.getItem(this.claimedFlagsKey);
           if (raw) {
             const claimedMap: Record<string, boolean> = JSON.parse(raw);
-            let modified = false;
             const toPersist: Achievement[] = [];
 
             for (const [id, claimed] of Object.entries(claimedMap)) {
@@ -1284,9 +1420,10 @@ export class ProgressTracker {
 
               const idx = this.achievementsCache.findIndex(a => a.id === id);
               if (idx !== -1) {
+                // Only update if not already claimed to prevent overriding correct state
                 if (!this.achievementsCache[idx].claimed) {
+                  console.log(`Restoring claimed state for achievement ${id} from localStorage`);
                   this.achievementsCache[idx].claimed = true;
-                  modified = true;
                   toPersist.push(this.achievementsCache[idx]);
                 }
               } else {
@@ -1311,31 +1448,57 @@ export class ProgressTracker {
                       claimed: true,
                     } as Achievement);
 
-                // Add constructed entry to in-memory cache so UI won't allow
-                // re-claiming during this session, but do NOT automatically
-                // persist it to the DB here — the tests expect no writes
-                // during initialization for unknown achievements.
+                console.log(`Creating claimed achievement record for ${id} from localStorage flag`);
                 this.achievementsCache.push(constructed);
-                modified = true;
               }
             }
 
             if (toPersist.length > 0) {
+              console.log(
+                `Persisting ${toPersist.length} claimed achievements from localStorage flags`
+              );
+              const successfullyPersisted: string[] = [];
               for (const ach of toPersist) {
                 try {
-                  await this.persistAchievementWithRetries(ach);
+                  const persisted = await this.persistAchievementWithRetries(ach);
+                  if (persisted) {
+                    successfullyPersisted.push(ach.id);
+                  }
                 } catch (err) {
                   console.warn('Failed to persist claimed flag from localStorage for', ach.id, err);
                 }
               }
-            }
 
-            if (modified) {
-              // Remove claimed flags once we've attempted to persist them
-              try {
-                localStorage.removeItem(this.claimedFlagsKey);
-              } catch {
-                // ignore
+              // Only remove claimed flags for achievements that were successfully persisted
+              if (successfullyPersisted.length > 0) {
+                try {
+                  const raw = localStorage.getItem(this.claimedFlagsKey);
+                  if (raw) {
+                    const flags: Record<string, boolean> = JSON.parse(raw);
+                    let anyRemoved = false;
+                    for (const id of successfullyPersisted) {
+                      if (flags[id] !== undefined) {
+                        delete flags[id];
+                        anyRemoved = true;
+                      }
+                    }
+                    if (anyRemoved) {
+                      if (Object.keys(flags).length === 0) {
+                        localStorage.removeItem(this.claimedFlagsKey);
+                        console.log(
+                          `Cleared localStorage claimed flags after successful persistence`
+                        );
+                      } else {
+                        localStorage.setItem(this.claimedFlagsKey, JSON.stringify(flags));
+                        console.log(
+                          `Removed ${successfullyPersisted.length} persisted claimed flags from localStorage`
+                        );
+                      }
+                    }
+                  }
+                } catch (err) {
+                  console.warn('Failed to clean up successfully persisted claimed flags:', err);
+                }
               }
             }
           }
@@ -1373,12 +1536,17 @@ export class ProgressTracker {
                     claimed: !!entry.claimed,
                   } as Achievement);
 
+              console.log(
+                `Creating achievement from snapshot: ${entry.id}, claimed: ${!!entry.claimed}`
+              );
               this.achievementsCache.push(constructed);
               modified = true;
             } else {
-              // Merge claimed/unlockedTimestamp if snapshot is newer or claims present
+              // Merge claimed/unlockedTimestamp if snapshot has newer/additional info
+              // IMPORTANT: Only set claimed to true if snapshot says so, never set to false
               const cached = this.achievementsCache[idx];
               if (entry.claimed && !cached.claimed) {
+                console.log(`Restoring claimed state for ${entry.id} from snapshot`);
                 cached.claimed = true;
                 modified = true;
               }
@@ -1393,6 +1561,7 @@ export class ProgressTracker {
           }
 
           if (modified) {
+            console.log(`Applied ${snapshot.length} entries from achievements snapshot`);
             // We merged snapshot entries into the in-memory cache to ensure UI
             // and runtime logic see unlocked/claimed state immediately. Do not
             // persist these merged entries here during initialization; persistence
@@ -1400,12 +1569,11 @@ export class ProgressTracker {
             // idempotent and avoid unexpected DB writes during tests.
           }
 
-          // Remove snapshot after merging to avoid reapplying it
-          try {
-            localStorage.removeItem('chronochess_achievements_snapshot');
-          } catch {
-            // ignore
-          }
+          // Only clear snapshot after successful DB persistence to prevent data loss
+          // Don't clear immediately during initialization to preserve data across reloads
+          console.log(
+            `Applied ${snapshot.length} entries from achievements snapshot - keeping snapshot until DB sync completes`
+          );
         }
       } catch (err) {
         console.warn('Failed to merge achievements snapshot from localStorage during load:', err);
@@ -1584,16 +1752,16 @@ export class ProgressTracker {
   private async checkCombinationAchievements(combination: EvolutionCombination): Promise<void> {
     // Check for various achievements based on the combination
     if (combination.totalPower > 1000) {
-      await this.unlockAchievement('powerful_combination');
+      await this.unlockAchievementIfEligible('powerful_combination');
     }
 
     if (combination.synergyBonuses.length > 0) {
-      await this.unlockAchievement('synergy_master');
+      await this.unlockAchievementIfEligible('synergy_master');
     }
 
     const totalCombinations = await this.db.count('combinations');
     if (totalCombinations >= 100) {
-      await this.unlockAchievement('combination_collector');
+      await this.unlockAchievementIfEligible('combination_collector');
     }
   }
 
@@ -1861,6 +2029,148 @@ export class ProgressTracker {
     return definitions[id] || null;
   }
 
+  /**
+   * Public helper to retrieve ALL achievement definitions. This de-duplicates
+   * the definitions logic across UI components so they don't maintain their
+   * own hard-coded copies (which can drift and cause persistence issues).
+   */
+  public getAllAchievementDefinitions(): Array<Omit<Achievement, 'unlockedTimestamp'>> {
+    const ids = [
+      'first_win',
+      'win_streak_5',
+      'win_streak_10',
+      'total_wins_25',
+      'total_wins_100',
+      'elegant_checkmate',
+      'first_evolution',
+      'pawn_master',
+      'knight_specialist',
+      'bishop_specialist',
+      'rook_specialist',
+      'queen_specialist',
+      'king_specialist',
+      'complete_evolution',
+      'evolution_explorer',
+      'resource_collector',
+      'wealth_accumulator',
+      'temporal_lord',
+      'resource_tycoon',
+      'dust_collector',
+      'dust_master',
+      'speed_demon',
+      'perfectionist',
+      'comeback_king',
+      'time_master',
+      'marathon_player',
+      'combo_master',
+      'strategic_genius',
+      'powerful_combination',
+      'synergy_master',
+      'combination_collector',
+    ];
+    return ids
+      .map(id => this.getAchievementDefinition(id))
+      .filter((d): d is Omit<Achievement, 'unlockedTimestamp'> => !!d);
+  }
+
+  /**
+   * Internal helper: guard against concurrent claims for the same achievement.
+   */
+  private startClaim(id: string): boolean {
+    if (this.inFlightClaims.has(id)) return false;
+    this.inFlightClaims.add(id);
+    return true;
+  }
+
+  private finishClaim(id: string): void {
+    this.inFlightClaims.delete(id);
+  }
+
+  // ---- Pending claimed localStorage helpers ----
+  private PENDING_CLAIM_KEY = 'chronochess_pending_claimed_achievements';
+  private loadPendingClaimedFromLocalStorage(): void {
+    try {
+      const raw = localStorage.getItem(this.PENDING_CLAIM_KEY);
+      if (!raw) return;
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        this.pendingClaimed = new Set(arr.filter(id => typeof id === 'string'));
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+  private savePendingClaimedToLocalStorage(): void {
+    try {
+      localStorage.setItem(this.PENDING_CLAIM_KEY, JSON.stringify(Array.from(this.pendingClaimed)));
+    } catch {
+      // ignore
+    }
+  }
+  private trackPendingClaim(id: string): void {
+    if (!this.pendingClaimed.has(id)) {
+      this.pendingClaimed.add(id);
+      this.savePendingClaimedToLocalStorage();
+    }
+  }
+  private clearPendingClaim(id: string): void {
+    if (this.pendingClaimed.delete(id)) {
+      this.savePendingClaimedToLocalStorage();
+    }
+  }
+  private async cleanupSnapshotIfAllPersisted(): Promise<void> {
+    try {
+      // Check if all cached achievements exist in the DB
+      let allPersisted = true;
+      for (const ach of this.achievementsCache) {
+        try {
+          const dbAch = await this.db.load('achievements', ach.id);
+          if (!dbAch) {
+            allPersisted = false;
+            break;
+          }
+        } catch {
+          allPersisted = false;
+          break;
+        }
+      }
+
+      if (allPersisted && this.achievementsCache.length > 0) {
+        localStorage.removeItem('chronochess_achievements_snapshot');
+        console.log('✅ All achievements persisted to DB - cleaned up snapshot');
+      }
+    } catch (err) {
+      // ignore cleanup errors
+    }
+  }
+
+  private applyPendingClaimFlags(): void {
+    if (this.pendingClaimed.size === 0) return;
+    for (const id of this.pendingClaimed) {
+      const idx = this.achievementsCache.findIndex(a => a.id === id);
+      if (idx !== -1) {
+        if (!this.achievementsCache[idx].claimed) {
+          this.achievementsCache[idx].claimed = true;
+        }
+      } else {
+        // If achievement isn't in cache yet but we have a pending claim, reconstruct minimal record
+        const def = this.getAchievementDefinition(id);
+        if (def) {
+          this.achievementsCache.push({
+            id,
+            name: def.name,
+            description: def.description,
+            category: def.category,
+            rarity: def.rarity,
+            reward: def.reward,
+            unlockedTimestamp: Date.now(),
+            claimed: true,
+          });
+        }
+      }
+    }
+  }
+
   private async generateChecksum(data: any): Promise<string> {
     const dataString = JSON.stringify(data);
     let hash = 0;
@@ -1870,6 +2180,693 @@ export class ProgressTracker {
       hash = hash & hash; // Convert to 32-bit integer
     }
     return hash.toString(16);
+  }
+
+  /**
+   * Best-effort cloud synchronization for an achievement claim.
+   * Updates the default save slot's `data.achievements` array in Supabase so
+   * claimed status is reflected cross-device immediately instead of waiting
+   * for the next full auto-save.
+   *
+   * This is intentionally lightweight: it performs a selective SELECT of the
+   * existing row, mutates the JSON, and issues an UPDATE on (user_id,id).
+   * All failures are silent (logged) to avoid impacting gameplay.
+   */
+  private async syncAchievementClaimToCloud(achievement: Achievement): Promise<void> {
+    try {
+      // Dynamic imports avoid creating a hard dependency (and circular refs)
+      const [{ getSupabaseClient }, { ensureAuthenticatedUser }] = await Promise.all([
+        import('../lib/supabaseClient'),
+        import('../lib/supabaseAuth'),
+      ]);
+      const supabase = getSupabaseClient?.();
+      if (!supabase) return; // Cloud not configured
+
+      const user = await ensureAuthenticatedUser();
+      if (!user) return; // Guest mode – skip cloud sync
+
+      const slotId = 'chronochess_save'; // Canonical primary save slot
+
+      // Fetch current save row (only need the data JSON)
+      const { data, error } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('user_id', user.id)
+        .eq('id', slotId)
+        .maybeSingle();
+      if (error) {
+        console.warn('[claim-sync] Failed to load existing cloud save:', error);
+        return;
+      }
+      if (!data) {
+        // No cloud save yet; create a minimal snapshot so claimed state cannot be
+        // exploited via cache clearing before the first full auto-save.
+        try {
+          const minimalSaveData: any = {
+            version: '1.0.0',
+            timestamp: Date.now(),
+            game: {},
+            resources: {},
+            evolutions: [],
+            settings: {},
+            moveHistory: [],
+            undoStack: [],
+            redoStack: [],
+            playerStats: {
+              totalPlayTime: 0,
+              gamesPlayed: 0,
+              gamesWon: 0,
+              totalMoves: 0,
+              elegantCheckmates: 0,
+              premiumCurrencyEarned: 0,
+              evolutionCombinationsUnlocked: 0,
+              lastPlayedTimestamp: Date.now(),
+              createdTimestamp: Date.now(),
+            },
+            achievements: [
+              {
+                ...achievement,
+                claimed: true,
+              },
+            ],
+            unlockedContent: {
+              soloModeAchievements: [],
+              pieceAbilities: [],
+              aestheticBoosters: [],
+              soundPacks: [],
+            },
+          };
+          const record = {
+            id: slotId,
+            user_id: user.id,
+            name: 'ChronoChess Save',
+            timestamp: minimalSaveData.timestamp,
+            version: minimalSaveData.version,
+            is_auto_save: false,
+            is_corrupted: false,
+            size: JSON.stringify(minimalSaveData).length,
+            data: minimalSaveData,
+          };
+          const { error: insertErr } = await supabase
+            .from('saves')
+            .upsert(record, { onConflict: 'user_id,id' });
+          if (insertErr) {
+            console.warn('[claim-sync] Failed to create minimal cloud save:', insertErr);
+          } else {
+            console.log(
+              `[claim-sync] Created minimal cloud save with claimed achievement ${achievement.id}`
+            );
+          }
+        } catch (createErr) {
+          console.warn('[claim-sync] Minimal claim save creation threw (non-fatal):', createErr);
+        }
+        return;
+      }
+
+      let savePayload: any = (data as any).data || {};
+      // If core fields are missing, salvage by constructing a minimal baseline while preserving existing JSON.
+      const coreMissing = !(
+        savePayload &&
+        typeof savePayload === 'object' &&
+        'version' in savePayload &&
+        'game' in savePayload &&
+        'resources' in savePayload &&
+        'evolutions' in savePayload &&
+        'settings' in savePayload
+      );
+      if (coreMissing) {
+        savePayload = {
+          version: '1.0.0',
+          timestamp: Date.now(),
+          game: {},
+          resources: {},
+          evolutions: [],
+          settings: {},
+          moveHistory: [],
+          undoStack: [],
+          redoStack: [],
+          playerStats: {
+            totalPlayTime: 0,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            totalMoves: 0,
+            elegantCheckmates: 0,
+            premiumCurrencyEarned: 0,
+            evolutionCombinationsUnlocked: 0,
+            lastPlayedTimestamp: Date.now(),
+            createdTimestamp: Date.now(),
+          },
+          achievements: Array.isArray((data as any).data?.achievements)
+            ? (data as any).data.achievements
+            : [],
+          unlockedContent: {
+            soloModeAchievements: [],
+            pieceAbilities: [],
+            aestheticBoosters: [],
+            soundPacks: [],
+          },
+        };
+      }
+      const achievements: any[] = Array.isArray(savePayload.achievements)
+        ? [...savePayload.achievements]
+        : [];
+      const idx = achievements.findIndex(a => a && a.id === achievement.id);
+      if (idx >= 0) {
+        if (!achievements[idx].claimed) achievements[idx].claimed = true;
+      } else {
+        // Insert minimal representation (full object is fine – already serializable)
+        achievements.push({ ...achievement, claimed: true });
+      }
+      savePayload.achievements = achievements;
+      // IMPORTANT: Invalidate checksum so cloud loads don't fail validation.
+      // The SaveSystem will skip checksum verification when it's absent.
+      try {
+        if (savePayload && typeof savePayload === 'object') {
+          delete (savePayload as any).checksum;
+        }
+      } catch {}
+
+      // Perform partial update of the row's data JSON only
+      const { error: updateError } = await supabase
+        .from('saves')
+        .update({ data: savePayload })
+        .eq('user_id', user.id)
+        .eq('id', slotId);
+      if (updateError) {
+        console.warn('[claim-sync] Failed to update cloud save with claimed flag:', updateError);
+      } else {
+        console.log(`[claim-sync] Cloud save updated with claimed achievement ${achievement.id}`);
+      }
+    } catch (err) {
+      // Silent failure – cloud sync is opportunistic
+      console.warn('[claim-sync] Claim cloud sync failed (non-fatal):', err);
+    }
+  }
+
+  /**
+   * Opportunistic cloud sync for newly UNLOCKED (but not yet claimed) achievements.
+   * Without this, if the player clears site data (or switches devices) before the
+   * next scheduled auto-save, all unlocked-but-unclaimed achievements are lost
+   * because only the local IndexedDB + localStorage fallbacks held them.
+   *
+   * Strategy:
+   * 1. Attempt to load existing primary save row.
+   * 2. If it exists and has a valid core SaveData payload, merge / append the unlocked achievement.
+   * 3. If it does NOT exist (common early in a new session), create a minimal valid SaveData
+   *    structure containing just the achievements array and required core fields so that
+   *    later full saves can safely overwrite / expand it.
+   *
+   * This function purposefully ignores checksum generation – the SaveSystem repair logic
+   * tolerates missing checksum fields and will add one on next full save. We also keep
+   * the snapshot "trivial" so SaveSystem overwrite heuristics still treat it as safe to replace.
+   */
+  private async syncAchievementUnlockToCloud(achievement: Achievement): Promise<void> {
+    try {
+      const [{ getSupabaseClient }, { ensureAuthenticatedUser }] = await Promise.all([
+        import('../lib/supabaseClient'),
+        import('../lib/supabaseAuth'),
+      ]);
+      const supabase = getSupabaseClient?.();
+      if (!supabase) return; // Cloud not configured
+      const user = await ensureAuthenticatedUser();
+      if (!user) return; // Guest mode – skip
+
+      const slotId = 'chronochess_save';
+      const { data, error } = await supabase
+        .from('saves')
+        .select('data,name,timestamp,version,is_auto_save,is_corrupted,size')
+        .eq('user_id', user.id)
+        .eq('id', slotId)
+        .maybeSingle();
+      if (error) {
+        console.warn('[unlock-sync] Failed to load existing cloud save (continuing):', error);
+      }
+
+      if (!data) {
+        // Create minimal save row so the achievement survives a refresh.
+        const minimalSaveData: any = {
+          version: '1.0.0',
+          // Use a fresh timestamp so later real saves supersede this one.
+          timestamp: Date.now(),
+          game: {},
+          resources: {},
+          evolutions: [],
+          settings: {},
+          moveHistory: [],
+          undoStack: [],
+          redoStack: [],
+          playerStats: {
+            totalPlayTime: 0,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            totalMoves: 0,
+            elegantCheckmates: 0,
+            premiumCurrencyEarned: 0,
+            evolutionCombinationsUnlocked: 0,
+            lastPlayedTimestamp: Date.now(),
+            createdTimestamp: Date.now(),
+          },
+          achievements: [
+            {
+              ...achievement,
+              // Ensure claimed is explicitly boolean in the snapshot
+              claimed: !!achievement.claimed,
+            },
+          ],
+          unlockedContent: {
+            soloModeAchievements: [],
+            pieceAbilities: [],
+            aestheticBoosters: [],
+            soundPacks: [],
+          },
+        };
+        try {
+          const record = {
+            id: slotId,
+            user_id: user.id,
+            name: 'ChronoChess Save',
+            timestamp: minimalSaveData.timestamp,
+            version: minimalSaveData.version,
+            is_auto_save: false,
+            is_corrupted: false,
+            size: JSON.stringify(minimalSaveData).length,
+            data: minimalSaveData,
+          };
+          const { error: insertErr } = await supabase.from('saves').upsert(record, {
+            onConflict: 'user_id,id',
+          });
+          if (insertErr) {
+            console.warn('[unlock-sync] Failed to create minimal cloud save:', insertErr);
+          } else {
+            console.log(
+              `[unlock-sync] Created minimal cloud save with first achievement ${achievement.id}`
+            );
+          }
+        } catch (createErr) {
+          console.warn('[unlock-sync] Minimal save creation threw (non-fatal):', createErr);
+        }
+        return;
+      }
+
+      // Existing save path – ensure we have a safe mutable payload
+      let savePayload: any = (data as any).data || {};
+      const coreMissing = !(
+        savePayload &&
+        typeof savePayload === 'object' &&
+        'version' in savePayload &&
+        'game' in savePayload &&
+        'resources' in savePayload &&
+        'evolutions' in savePayload &&
+        'settings' in savePayload
+      );
+      if (coreMissing) {
+        savePayload = {
+          version: '1.0.0',
+          timestamp: Date.now(),
+          game: {},
+          resources: {},
+          evolutions: [],
+          settings: {},
+          moveHistory: [],
+          undoStack: [],
+          redoStack: [],
+          playerStats: {
+            totalPlayTime: 0,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            totalMoves: 0,
+            elegantCheckmates: 0,
+            premiumCurrencyEarned: 0,
+            evolutionCombinationsUnlocked: 0,
+            lastPlayedTimestamp: Date.now(),
+            createdTimestamp: Date.now(),
+          },
+          achievements: Array.isArray((data as any).data?.achievements)
+            ? (data as any).data.achievements
+            : [],
+          unlockedContent: {
+            soloModeAchievements: [],
+            pieceAbilities: [],
+            aestheticBoosters: [],
+            soundPacks: [],
+          },
+        };
+      }
+
+      const achievements: any[] = Array.isArray(savePayload.achievements)
+        ? [...savePayload.achievements]
+        : [];
+      if (!achievements.some(a => a && a.id === achievement.id)) {
+        achievements.push({ ...achievement, claimed: !!achievement.claimed });
+        savePayload.achievements = achievements;
+        // Invalidate checksum if present
+        try {
+          delete (savePayload as any).checksum;
+        } catch {}
+        const { error: updateError } = await supabase
+          .from('saves')
+          .update({ data: savePayload })
+          .eq('user_id', user.id)
+          .eq('id', slotId);
+        if (updateError) {
+          console.warn(
+            '[unlock-sync] Failed to append unlocked achievement to cloud save:',
+            updateError
+          );
+        } else {
+          console.log(
+            `[unlock-sync] Cloud save updated with unlocked achievement ${achievement.id}`
+          );
+        }
+      }
+    } catch (err) {
+      console.warn('[unlock-sync] Unlock cloud sync failed (non-fatal):', err);
+    }
+  }
+
+  /**
+   * Restore achievements from save data (for cloud sync)
+   */
+  async restoreAchievementsFromSave(savedAchievements: any[]): Promise<void> {
+    await this.ensureInitialized();
+
+    if (!Array.isArray(savedAchievements) || savedAchievements.length === 0) {
+      console.log('🏆 No achievements in save data to restore');
+      return;
+    }
+
+    console.log(`🏆 Restoring ${savedAchievements.length} achievements from save data`);
+
+    for (const savedAch of savedAchievements) {
+      if (!savedAch.id) continue;
+
+      try {
+        // Check if achievement already exists in local database
+        const existingIdx = this.achievementsCache.findIndex(a => a.id === savedAch.id);
+
+        if (existingIdx >= 0) {
+          // Update existing achievement, preserving claimed status if it's more recent
+          const existing = this.achievementsCache[existingIdx];
+          const shouldUpdate = !existing.claimed && savedAch.claimed;
+
+          if (shouldUpdate) {
+            console.log(
+              `🔄 Updating achievement ${savedAch.id} from save: claimed=${savedAch.claimed}`
+            );
+            this.achievementsCache[existingIdx] = { ...savedAch };
+            await this.persistAchievementWithRetries(this.achievementsCache[existingIdx]);
+          }
+        } else {
+          // Add new achievement from save data
+          console.log(
+            `➕ Adding achievement ${savedAch.id} from save: claimed=${savedAch.claimed}`
+          );
+          this.achievementsCache.push(savedAch);
+          await this.persistAchievementWithRetries(savedAch);
+        }
+      } catch (err) {
+        console.warn(`Failed to restore achievement ${savedAch.id}:`, err);
+      }
+    }
+
+    console.log(
+      `✅ Achievement restoration complete: ${this.achievementsCache.length} total achievements`
+    );
+  }
+
+  /**
+   * Ensure achievements are backed up to cloud if they exist locally but not in cloud.
+   * This provides a safety net for achievement persistence.
+   */
+  private async ensureAchievementsBackedUpToCloud(): Promise<void> {
+    // Only run if we have achievements and cloud is available
+    if (this.achievementsCache.length === 0) return;
+
+    try {
+      // Dynamic import to avoid circular dependency
+      const [{ getSupabaseClient }, { ensureAuthenticatedUser }] = await Promise.all([
+        import('../lib/supabaseClient'),
+        import('../lib/supabaseAuth'),
+      ]);
+      const supabase = getSupabaseClient?.();
+      if (!supabase) return; // Cloud not configured
+
+      const user = await ensureAuthenticatedUser();
+      if (!user) return; // Guest mode – skip
+
+      // Check if cloud save exists
+      const slotId = 'chronochess_save';
+      const { data, error } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('user_id', user.id)
+        .eq('id', slotId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('Failed to check cloud save for achievement backup:', error);
+        return;
+      }
+
+      const cloudAchievements: any[] = data?.data?.achievements || [];
+
+      // If cloud has fewer achievements than local, trigger a full save
+      if (cloudAchievements.length < this.achievementsCache.length) {
+        console.log(
+          `📤 Backing up ${this.achievementsCache.length} achievements to cloud (cloud has ${cloudAchievements.length})`
+        );
+        await this.triggerFullSaveForAchievement('backup', 'initialization');
+      }
+    } catch (err) {
+      console.warn('Achievement cloud backup check failed:', err);
+    }
+  }
+
+  /**
+   * Trigger a full save operation to ensure achievement changes are persisted to cloud.
+   * This is more reliable than individual cloud sync methods.
+   */
+  private async triggerFullSaveForAchievement(
+    action: 'unlock' | 'claim' | 'backup',
+    achievementId: string
+  ): Promise<void> {
+    try {
+      // First try: Direct cloud save of achievements
+      console.log(`💾 Triggering cloud save after achievement ${action}: ${achievementId}`);
+      await this.saveAchievementsDirectlyToCloud();
+      console.log(`✅ Direct cloud save completed for achievement ${action}: ${achievementId}`);
+
+      // Also trigger full save as backup
+      try {
+        const { useGameStore } = await import('../store');
+        const store = useGameStore.getState();
+
+        if (typeof store.saveToStorage === 'function') {
+          console.log(`💾 Also triggering full save for achievement ${action}: ${achievementId}`);
+          store.saveToStorage('chronochess_save');
+        }
+      } catch (fullSaveErr) {
+        console.warn('Full save backup failed (non-fatal):', fullSaveErr);
+      }
+    } catch (err) {
+      console.warn(`Failed to save achievements directly for ${action}:`, err);
+
+      // Fallback: try to use the individual cloud sync methods
+      try {
+        console.log(`🔄 Falling back to individual sync for ${action}: ${achievementId}`);
+        const achievement = this.achievementsCache.find(a => a.id === achievementId);
+        if (achievement) {
+          if (action === 'unlock') {
+            await this.syncAchievementUnlockToCloud(achievement);
+          } else if (action === 'claim') {
+            await this.syncAchievementClaimToCloud(achievement);
+          }
+          console.log(`✅ Individual sync completed for ${action}: ${achievementId}`);
+        } else {
+          console.warn(`Achievement not found in cache for fallback sync: ${achievementId}`);
+        }
+      } catch (fallbackErr) {
+        console.warn('Fallback individual sync also failed:', fallbackErr);
+        throw fallbackErr;
+      }
+    }
+  }
+
+  /**
+   * Save achievements directly to cloud save slot.
+   * This ensures achievements are persisted even if the full save system has issues.
+   */
+  private async saveAchievementsDirectlyToCloud(): Promise<void> {
+    try {
+      const [{ getSupabaseClient }, { ensureAuthenticatedUser }] = await Promise.all([
+        import('../lib/supabaseClient'),
+        import('../lib/supabaseAuth'),
+      ]);
+      const supabase = getSupabaseClient?.();
+      if (!supabase) {
+        throw new Error('Cloud not configured');
+      }
+
+      const user = await ensureAuthenticatedUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      const slotId = 'chronochess_save';
+
+      // Get current cloud save or create minimal one
+      const { data: existingData, error: fetchError } = await supabase
+        .from('saves')
+        .select('data, name, timestamp, version, is_auto_save, is_corrupted, size')
+        .eq('user_id', user.id)
+        .eq('id', slotId)
+        .maybeSingle();
+
+      if (fetchError) {
+        throw new Error(`Failed to fetch existing cloud save: ${fetchError.message}`);
+      }
+
+      let saveData: any;
+      if (existingData?.data) {
+        // Update existing save with current achievements
+        saveData = existingData.data;
+        saveData.achievements = this.achievementsCache;
+        console.log(
+          `📝 Updating existing cloud save with ${this.achievementsCache.length} achievements`
+        );
+      } else {
+        // Create minimal save with achievements
+        saveData = {
+          version: '1.0.0',
+          timestamp: Date.now(),
+          achievements: this.achievementsCache,
+          // Add minimal required fields
+          game: {
+            fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+            isCheck: false,
+            isCheckmate: false,
+            isStalemate: false,
+          },
+          resources: { temporalEssence: 0, mnemonicDust: 0, aetherShards: 0 },
+          evolutions: [],
+          settings: {
+            volume: 0.5,
+            soundEnabled: true,
+            theme: 'default',
+            autoSave: true,
+            autoSaveInterval: 60,
+          },
+          playerStats: {
+            totalPlayTime: 0,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            totalMoves: 0,
+            elegantCheckmates: 0,
+            premiumCurrencyEarned: 0,
+            evolutionCombinationsUnlocked: 0,
+            lastPlayedTimestamp: Date.now(),
+            createdTimestamp: Date.now(),
+          },
+          unlockedContent: {
+            soloModeAchievements: [],
+            pieceAbilities: [],
+            aestheticBoosters: [],
+            soundPacks: [],
+          },
+        };
+        console.log(
+          `🆕 Creating new cloud save with ${this.achievementsCache.length} achievements`
+        );
+      }
+
+      // Update the cloud save
+      const record = {
+        id: slotId,
+        user_id: user.id,
+        name: existingData?.name || 'ChronoChess Save',
+        timestamp: saveData.timestamp,
+        version: saveData.version,
+        is_auto_save: existingData?.is_auto_save ?? true,
+        is_corrupted: false,
+        size: JSON.stringify(saveData).length,
+        data: saveData,
+      };
+
+      const { error: upsertError } = await supabase
+        .from('saves')
+        .upsert(record, { onConflict: 'user_id,id' });
+
+      if (upsertError) {
+        throw new Error(`Failed to save achievements to cloud: ${upsertError.message}`);
+      }
+
+      console.log(`✅ Successfully saved ${this.achievementsCache.length} achievements to cloud`);
+    } catch (err) {
+      console.error('Direct achievement cloud save failed:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Merge cloud achievements (if any) BEFORE reconciliation during initialization.
+   * This prevents re-unlocking already-claimed achievements when local caches were lost.
+   */
+  private async mergeCloudAchievementsSnapshot(): Promise<void> {
+    try {
+      const [{ getSupabaseClient }, { ensureAuthenticatedUser }] = await Promise.all([
+        import('../lib/supabaseClient'),
+        import('../lib/supabaseAuth'),
+      ]);
+      const supabase = getSupabaseClient?.();
+      if (!supabase) return;
+      const user = await ensureAuthenticatedUser();
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('saves')
+        .select('data')
+        .eq('user_id', user.id)
+        .eq('id', 'chronochess_save')
+        .maybeSingle();
+      if (error || !data) return;
+      const cloudAchievements: any[] = Array.isArray((data as any).data?.achievements)
+        ? (data as any).data.achievements
+        : [];
+      if (cloudAchievements.length === 0) return;
+      let modified = false;
+      for (const cloud of cloudAchievements) {
+        if (!cloud || !cloud.id) continue;
+        const idx = this.achievementsCache.findIndex(a => a.id === cloud.id);
+        if (idx === -1) {
+          // Add missing achievement from cloud
+          this.achievementsCache.push({
+            ...cloud,
+            claimed: !!cloud.claimed,
+          });
+          modified = true;
+        } else {
+          // Merge claimed state (cloud true wins) and newest unlockedTimestamp
+          const local = this.achievementsCache[idx];
+          if (cloud.claimed && !local.claimed) {
+            local.claimed = true;
+            modified = true;
+          }
+          if (
+            cloud.unlockedTimestamp &&
+            (!local.unlockedTimestamp || cloud.unlockedTimestamp > local.unlockedTimestamp)
+          ) {
+            local.unlockedTimestamp = cloud.unlockedTimestamp;
+            modified = true;
+          }
+        }
+      }
+      if (modified) {
+        try {
+          this.saveAchievementsSnapshotToLocalStorage();
+        } catch {}
+      }
+    } catch (err) {
+      console.warn('mergeCloudAchievementsSnapshot failed:', err);
+    }
   }
 }
 

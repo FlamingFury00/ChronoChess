@@ -133,7 +133,7 @@ export class SaveSystem {
         undoStack: options?.extras?.undoStack || [],
         redoStack: options?.extras?.redoStack || [],
         playerStats: await this.getPlayerStatistics(slotId),
-        achievements: [],
+        achievements: await this.getCurrentAchievements(), // Include achievements for cloud persistence
         unlockedContent: {
           soloModeAchievements: [],
           pieceAbilities: [],
@@ -200,20 +200,93 @@ export class SaveSystem {
                   '[cloud-sync] Skipping cloud overwrite with trivial snapshot; preserved existing richer cloud save.'
                 );
               } else {
-                void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                // If both are trivial but existing has achievements and new does not, merge to avoid loss
+                let cloudCopy: SaveData = saveData;
+                try {
+                  const existingAch = Array.isArray(existing?.data?.achievements)
+                    ? (existing!.data!.achievements as any[])
+                    : [];
+                  const newAch = Array.isArray(saveData.achievements)
+                    ? (saveData.achievements as any[])
+                    : [];
+                  const shouldMerge = existingAch.length > 0 && newAch.length < existingAch.length;
+                  if (shouldMerge) {
+                    const byId = new Map<string, any>();
+                    for (const a of newAch) if (a && a.id) byId.set(a.id, { ...a });
+                    for (const a of existingAch)
+                      if (a && a.id)
+                        byId.set(a.id, {
+                          ...(byId.get(a.id) || {}),
+                          ...a,
+                          claimed: !!(byId.get(a.id)?.claimed || a.claimed),
+                        });
+                    const merged = Array.from(byId.values());
+                    cloudCopy = { ...(saveData as any), achievements: merged } as SaveData;
+                    // Remove checksum so cloud load can accept and repair later without mismatch
+                    try {
+                      delete (cloudCopy as any).checksum;
+                    } catch {}
+                    console.log(
+                      '[cloud-sync] Merged cloud achievements into trivial snapshot before upsert.'
+                    );
+                  }
+                } catch {}
+                void cloudSaveService.save(slotId, cloudCopy, metaNoId).catch(err => {
                   console.warn('Cloud sync failed after local save (continuing):', err);
                 });
               }
             } catch (peekErr) {
               console.warn('Cloud peek failed; proceeding with trivial sync anyway:', peekErr);
-              void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+              // As a precaution, drop checksum if we mutate achievements later in middle tiers
+              const cloudCopy = { ...(saveData as any) } as SaveData;
+              try {
+                delete (cloudCopy as any).checksum;
+              } catch {}
+              void cloudSaveService.save(slotId, cloudCopy, metaNoId).catch(err => {
                 console.warn('Cloud sync failed after local save (continuing):', err);
               });
             }
           } else {
-            void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
-              console.warn('Cloud sync failed after local save (continuing):', err);
-            });
+            // For non-trivial saves, still preserve existing cloud achievements if our snapshot has fewer
+            try {
+              const existing = await cloudSaveService.load(slotId);
+              let cloudCopy: SaveData = saveData;
+              if (existing && existing.data) {
+                const existingAch = Array.isArray(existing.data.achievements)
+                  ? (existing.data.achievements as any[])
+                  : [];
+                const newAch = Array.isArray(saveData.achievements)
+                  ? (saveData.achievements as any[])
+                  : [];
+                if (existingAch.length > 0 && newAch.length < existingAch.length) {
+                  const byId = new Map<string, any>();
+                  for (const a of newAch) if (a && a.id) byId.set(a.id, { ...a });
+                  for (const a of existingAch)
+                    if (a && a.id)
+                      byId.set(a.id, {
+                        ...(byId.get(a.id) || {}),
+                        ...a,
+                        claimed: !!(byId.get(a.id)?.claimed || a.claimed),
+                      });
+                  const merged = Array.from(byId.values());
+                  cloudCopy = { ...(saveData as any), achievements: merged } as SaveData;
+                  try {
+                    delete (cloudCopy as any).checksum;
+                  } catch {}
+                  console.log(
+                    '[cloud-sync] Preserved existing cloud achievements when new snapshot had fewer.'
+                  );
+                }
+              }
+              void cloudSaveService.save(slotId, cloudCopy, metaNoId).catch(err => {
+                console.warn('Cloud sync failed after local save (continuing):', err);
+              });
+            } catch (mergeErr) {
+              // Fallback: push as-is
+              void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                console.warn('Cloud sync failed after local save (continuing):', err);
+              });
+            }
           }
         } catch (err) {
           console.warn('Cloud sync path threw unexpectedly (continuing):', err);
@@ -251,49 +324,305 @@ export class SaveSystem {
           console.log(`Attempting cloud load for slot ${slotId}...`);
           const cloud = await cloudSaveService.load(slotId);
           if (cloud && cloud.data) {
-            console.log(`Cloud data found for slot ${slotId}, caching locally`);
-            // Cache cloud copy locally for offline resilience
-            await this.db.save('saves', slotId, cloud.data as any);
-            const metaLocal: SaveSlot = cloud.meta;
-            await this.db.save('metadata', slotId, metaLocal);
+            // Decide whether to accept cloud snapshot or keep richer local
+            let acceptCloud = true;
+            const cloudData = cloud.data as SaveData;
+            // Determine if cloud payload is gameplay-trivial (ignore achievements)
+            const isGameplayTrivial = (sd: SaveData): boolean => {
+              try {
+                const r: any = sd.resources || {};
+                const allZeroResources = [
+                  'temporalEssence',
+                  'mnemonicDust',
+                  'aetherShards',
+                  'arcaneMana',
+                ].every(k => !r[k] || r[k] === 0);
+                const evolutionsEmpty = !sd.evolutions || sd.evolutions.length === 0;
+                const moves = sd.moveHistory?.length || 0;
+                const playTime = sd.playerStats?.totalPlayTime || 0;
+                const hasUnlocks = Boolean(sd.unlockedEvolutions && sd.unlockedEvolutions.length);
+                return (
+                  allZeroResources &&
+                  evolutionsEmpty &&
+                  moves === 0 &&
+                  playTime < 60_000 &&
+                  !hasUnlocks
+                );
+              } catch {
+                return false;
+              }
+            };
+            let achievementsFromCloud: any[] | undefined = undefined;
+            if (isGameplayTrivial(cloudData)) {
+              // Peek at existing local save to see if it's richer
+              try {
+                const localMetaTry = await this.db.load('metadata', slotId);
+                const localSave = await this.db.load('saves', slotId);
+                if (localSave && !isGameplayTrivial(localSave)) {
+                  // There is a non-trivial local snapshot; prefer it, but merge cloud achievements later
+                  acceptCloud = false;
+                  achievementsFromCloud = Array.isArray(cloudData.achievements)
+                    ? [...cloudData.achievements]
+                    : [];
+                } else {
+                  // No richer local IndexedDB save; check compat localStorage cache.
+                  try {
+                    if (typeof localStorage !== 'undefined' && localStorage !== null) {
+                      const raw = localStorage.getItem(slotId);
+                      if (raw) {
+                        try {
+                          const cached = JSON.parse(raw);
+                          const looksLikeSaveData =
+                            cached && typeof cached === 'object' && cached.resources;
+                          if (looksLikeSaveData) {
+                            const cachedAllZero = (() => {
+                              try {
+                                const r = cached.resources || {};
+                                const zero = [
+                                  'temporalEssence',
+                                  'mnemonicDust',
+                                  'aetherShards',
+                                  'arcaneMana',
+                                ].every((k: string) => !r[k] || r[k] === 0);
+                                const evoEmpty = !(cached.evolutions && cached.evolutions.length);
+                                const moves =
+                                  (cached.moveHistory && cached.moveHistory.length) || 0;
+                                const playTime =
+                                  (cached.playerStats && cached.playerStats.totalPlayTime) || 0;
+                                const hasUnlocks = Boolean(
+                                  cached.unlockedEvolutions && cached.unlockedEvolutions.length
+                                );
+                                return (
+                                  zero &&
+                                  evoEmpty &&
+                                  moves === 0 &&
+                                  playTime < 60_000 &&
+                                  !hasUnlocks
+                                );
+                              } catch {
+                                return true;
+                              }
+                            })();
+                            if (!cachedAllZero) {
+                              // Prefer this richer local cache over trivial cloud
+                              acceptCloud = false;
+                              achievementsFromCloud = Array.isArray(cloudData.achievements)
+                                ? [...cloudData.achievements]
+                                : [];
+                              // Import cached snapshot into IndexedDB so local load path can proceed
+                              const cachedSaveData: SaveData = {
+                                version: cached.version || this.getCurrentVersion(),
+                                timestamp: cached.timestamp || Date.now(),
+                                game: cached.game || ({} as any),
+                                resources: cached.resources || ({} as any),
+                                evolutions: Array.isArray(cached.evolutions)
+                                  ? cached.evolutions
+                                  : Array.from((cached.evolutions || new Map()).entries?.() || []),
+                                settings: cached.settings || ({} as any),
+                                moveHistory: cached.moveHistory || [],
+                                undoStack: cached.undoStack || [],
+                                redoStack: cached.redoStack || [],
+                                playerStats: cached.playerStats || {
+                                  totalPlayTime: 0,
+                                  gamesPlayed: 0,
+                                  gamesWon: 0,
+                                  totalMoves: 0,
+                                  elegantCheckmates: 0,
+                                  premiumCurrencyEarned: 0,
+                                  evolutionCombinationsUnlocked: 0,
+                                  lastPlayedTimestamp: Date.now(),
+                                  createdTimestamp: Date.now(),
+                                },
+                                achievements: cached.achievements || [],
+                                unlockedContent: cached.unlockedContent || {
+                                  soloModeAchievements: [],
+                                  pieceAbilities: [],
+                                  aestheticBoosters: [],
+                                  soundPacks: [],
+                                },
+                                pieceEvolutions: cached.pieceEvolutions,
+                                soloModeStats: cached.soloModeStats,
+                                unlockedEvolutions: cached.unlockedEvolutions,
+                                gameMode: cached.gameMode,
+                                knightDashCooldown: cached.knightDashCooldown,
+                                manualModePieceStates: cached.manualModePieceStates,
+                                compressed: cached.compressed,
+                                checksum: cached.checksum,
+                              } as SaveData;
+                              try {
+                                await this.db.save('saves', slotId, cachedSaveData as any);
+                                const meta = {
+                                  id: slotId,
+                                  name: 'Recovered from cache',
+                                  timestamp: cachedSaveData.timestamp,
+                                  version: cachedSaveData.version,
+                                  playerLevel: this.calculatePlayerLevel(cachedSaveData),
+                                  totalPlayTime: cachedSaveData.playerStats?.totalPlayTime || 0,
+                                  isAutoSave: true,
+                                  isCorrupted: false,
+                                  size: this.estimateSaveSize(
+                                    cachedSaveData.game,
+                                    cachedSaveData.resources,
+                                    new Map(cachedSaveData.evolutions)
+                                  ),
+                                } as any;
+                                await this.db.save('metadata', slotId, meta);
+                              } catch (cacheImportErr) {
+                                console.warn(
+                                  '[loadGame] Failed to import compat cache to DB:',
+                                  cacheImportErr
+                                );
+                              }
+                            }
+                          }
+                        } catch {}
+                      }
+                    }
+                  } catch {}
+                  // If we still haven't found any local metadata/save and cloud has achievements,
+                  // accept the trivial cloud snapshot so at least achievements are restored.
+                  if (!localMetaTry && !localSave) {
+                    if (Array.isArray(cloudData.achievements) && cloudData.achievements.length) {
+                      acceptCloud = true;
+                    }
+                  }
+                }
 
-            // Continue with validation/migration using cloud data
-            let saveData = cloud.data as SaveData;
-
-            if (this.config.checksumValidation && saveData.checksum) {
-              const calculatedChecksum = await this.calculateChecksum(saveData);
-              if (calculatedChecksum !== saveData.checksum) {
-                throw new SaveError(SaveErrorType.CORRUPTED_DATA, 'Save data checksum mismatch');
+                // Even if no local/richer snapshot exists, do NOT accept a trivial cloud snapshot
+                // to avoid resetting resources to zero. Instead, merge cloud achievements later.
+                // EXCEPTION: when there is absolutely no local data available (fresh device/cache cleared)
+                // and the cloud contains achievements, we accept the trivial cloud snapshot to restore
+                // those achievements. The gameplay fields may be zeroed, but achievements persistence
+                // takes precedence in this scenario.
+                if (!acceptCloud) {
+                  // Default behavior: don't accept trivial cloud; merge achievements later if possible
+                  achievementsFromCloud = Array.isArray(cloudData.achievements)
+                    ? [...cloudData.achievements]
+                    : [];
+                }
+              } catch (peekErr) {
+                // If we cannot determine local richness, default to cloud accept
+                console.warn('[loadGame] Local peek failed; proceeding with cloud:', peekErr);
               }
             }
 
-            if (saveData.compressed) {
-              // Decompression hook (not implemented)
+            // If we still plan to accept cloud, check local IndexedDB metadata timestamp.
+            // If local snapshot is newer than cloud, we usually prefer local. However, do NOT let a
+            // newer TRIVIAL local snapshot override a NON-TRIVIAL cloud snapshot (common during startup
+            // when an early autosave may write zeros before load completes).
+            if (acceptCloud) {
+              try {
+                const localMeta = await this.db.load('metadata', slotId);
+                if (localMeta && typeof localMeta.timestamp === 'number') {
+                  const cloudTs = (cloud.meta && (cloud.meta as any).timestamp) || 0;
+                  if (localMeta.timestamp > cloudTs) {
+                    // Peek at local save payload to assess triviality
+                    let localIsTrivial = false;
+                    try {
+                      const localPayload = await this.db.load('saves', slotId);
+                      if (localPayload) {
+                        localIsTrivial = isGameplayTrivial(localPayload as SaveData);
+                      }
+                    } catch {}
+
+                    const cloudIsTrivial = isGameplayTrivial(cloudData);
+
+                    if (!cloudIsTrivial && localIsTrivial) {
+                      // Keep cloud as authoritative (not trivial), ignore newer trivial local
+                      acceptCloud = true;
+                    } else {
+                      // Prefer newer local snapshot
+                      acceptCloud = false;
+                      // Preserve cloud achievements to merge later (if any)
+                      achievementsFromCloud = Array.isArray((cloudData as any).achievements)
+                        ? [...(cloudData as any).achievements]
+                        : [];
+                    }
+                  }
+                }
+              } catch {
+                // ignore
+              }
             }
 
-            if (saveData.version !== this.getCurrentVersion()) {
-              saveData = await this.migrateSaveData(saveData);
-            }
+            if (acceptCloud) {
+              console.log(`Cloud data found for slot ${slotId}, caching locally`);
+              // Cache cloud copy locally for offline resilience
+              await this.db.save('saves', slotId, cloudData as any);
+              const metaLocal: SaveSlot = cloud.meta;
+              await this.db.save('metadata', slotId, metaLocal);
 
-            const evolutions = new Map(saveData.evolutions);
-            return {
-              gameState: saveData.game,
-              resources: saveData.resources,
-              evolutions,
-              settings: saveData.settings,
-              metadata: metaLocal,
-              extras: {
-                moveHistory: saveData.moveHistory,
-                undoStack: saveData.undoStack,
-                redoStack: saveData.redoStack,
-                pieceEvolutions: saveData.pieceEvolutions,
-                soloModeStats: saveData.soloModeStats,
-                unlockedEvolutions: saveData.unlockedEvolutions,
-                gameMode: saveData.gameMode,
-                knightDashCooldown: saveData.knightDashCooldown,
-                manualModePieceStates: saveData.manualModePieceStates,
-              },
-            };
+              // Continue with validation/migration using cloud data
+              let saveData = cloudData;
+
+              if (this.config.checksumValidation && saveData.checksum) {
+                const calculatedChecksum = await this.calculateChecksum(saveData);
+                if (calculatedChecksum !== saveData.checksum) {
+                  console.warn(
+                    '[loadGame] Cloud save checksum mismatch detected – attempting auto-repair'
+                  );
+                  // Auto-repair: update checksum locally and in cloud (best-effort)
+                  saveData.checksum = calculatedChecksum;
+                  try {
+                    await this.db.save('saves', slotId, saveData as any);
+                  } catch (err) {
+                    console.warn('[loadGame] Failed to persist repaired checksum locally:', err);
+                  }
+                  if (this.cloudSyncEnabled) {
+                    try {
+                      const { id: _id, ...metaNoId } = metaLocal;
+                      void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                        console.warn(
+                          '[loadGame] Failed to persist repaired checksum to cloud:',
+                          err
+                        );
+                      });
+                    } catch (err) {
+                      console.warn('[loadGame] Cloud repair path threw (non-fatal):', err);
+                    }
+                  }
+                }
+              }
+
+              if (saveData.compressed) {
+                // Decompression hook (not implemented)
+              }
+
+              if (saveData.version !== this.getCurrentVersion()) {
+                saveData = await this.migrateSaveData(saveData);
+              }
+
+              const evolutions = new Map(saveData.evolutions);
+              return {
+                gameState: saveData.game,
+                resources: saveData.resources,
+                evolutions,
+                settings: saveData.settings,
+                metadata: metaLocal,
+                extras: {
+                  achievements: saveData.achievements,
+                  moveHistory: saveData.moveHistory,
+                  undoStack: saveData.undoStack,
+                  redoStack: saveData.redoStack,
+                  pieceEvolutions: saveData.pieceEvolutions,
+                  soloModeStats: saveData.soloModeStats,
+                  unlockedEvolutions: saveData.unlockedEvolutions,
+                  gameMode: saveData.gameMode,
+                  knightDashCooldown: saveData.knightDashCooldown,
+                  manualModePieceStates: saveData.manualModePieceStates,
+                },
+              };
+            } else {
+              // Prefer local save; merge cloud achievements into extras for restoration
+              console.log(
+                '[loadGame] Cloud snapshot is achievements-only/trivial; keeping local resources and merging achievements.'
+              );
+              // Fall through to the local load path below, but remember cloud achievements
+              if (achievementsFromCloud && achievementsFromCloud.length > 0) {
+                // Temporarily stash on instance (or pass via a local variable closure) – we'll merge into extras later
+                (this as any)._mergeAchievementsFromCloud = achievementsFromCloud;
+              }
+            }
           }
         } catch (err) {
           console.log(`Cloud load failed for slot ${slotId}, falling back to local:`, err);
@@ -304,7 +633,79 @@ export class SaveSystem {
 
       // Local load path
       console.log(`Loading from local storage for slot ${slotId}...`);
-      const metadata = await this.db.load('metadata', slotId);
+      // If metadata missing, attempt to hydrate from compat localStorage cache written by the store
+      let metadata = await this.db.load('metadata', slotId);
+      if (!metadata) {
+        try {
+          if (typeof localStorage !== 'undefined' && localStorage !== null) {
+            const raw = localStorage.getItem(slotId);
+            if (raw) {
+              try {
+                const cached = JSON.parse(raw);
+                if (cached && typeof cached === 'object' && cached.resources) {
+                  const cachedSaveData: SaveData = {
+                    version: cached.version || this.getCurrentVersion(),
+                    timestamp: cached.timestamp || Date.now(),
+                    game: cached.game || ({} as any),
+                    resources: cached.resources || ({} as any),
+                    evolutions: Array.isArray(cached.evolutions)
+                      ? cached.evolutions
+                      : Array.from((cached.evolutions || new Map()).entries?.() || []),
+                    settings: cached.settings || ({} as any),
+                    moveHistory: cached.moveHistory || [],
+                    undoStack: cached.undoStack || [],
+                    redoStack: cached.redoStack || [],
+                    playerStats: cached.playerStats || {
+                      totalPlayTime: 0,
+                      gamesPlayed: 0,
+                      gamesWon: 0,
+                      totalMoves: 0,
+                      elegantCheckmates: 0,
+                      premiumCurrencyEarned: 0,
+                      evolutionCombinationsUnlocked: 0,
+                      lastPlayedTimestamp: Date.now(),
+                      createdTimestamp: Date.now(),
+                    },
+                    achievements: cached.achievements || [],
+                    unlockedContent: cached.unlockedContent || {
+                      soloModeAchievements: [],
+                      pieceAbilities: [],
+                      aestheticBoosters: [],
+                      soundPacks: [],
+                    },
+                    pieceEvolutions: cached.pieceEvolutions,
+                    soloModeStats: cached.soloModeStats,
+                    unlockedEvolutions: cached.unlockedEvolutions,
+                    gameMode: cached.gameMode,
+                    knightDashCooldown: cached.knightDashCooldown,
+                    manualModePieceStates: cached.manualModePieceStates,
+                    compressed: cached.compressed,
+                    checksum: cached.checksum,
+                  } as SaveData;
+                  await this.db.save('saves', slotId, cachedSaveData as any);
+                  const meta = {
+                    id: slotId,
+                    name: 'Recovered from cache',
+                    timestamp: cachedSaveData.timestamp,
+                    version: cachedSaveData.version,
+                    playerLevel: this.calculatePlayerLevel(cachedSaveData),
+                    totalPlayTime: cachedSaveData.playerStats?.totalPlayTime || 0,
+                    isAutoSave: true,
+                    isCorrupted: false,
+                    size: this.estimateSaveSize(
+                      cachedSaveData.game,
+                      cachedSaveData.resources,
+                      new Map(cachedSaveData.evolutions)
+                    ),
+                  } as any;
+                  await this.db.save('metadata', slotId, meta);
+                  metadata = meta as any;
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
       if (!metadata) {
         console.log(`No local metadata found for slot ${slotId}`);
         return null;
@@ -321,7 +722,28 @@ export class SaveSystem {
       if (this.config.checksumValidation && saveData.checksum) {
         const calculatedChecksum = await this.calculateChecksum(saveData);
         if (calculatedChecksum !== saveData.checksum) {
-          throw new SaveError(SaveErrorType.CORRUPTED_DATA, 'Save data checksum mismatch');
+          console.warn('[loadGame] Local save checksum mismatch detected – attempting auto-repair');
+          // Auto-repair: update checksum locally and (if enabled) in cloud
+          saveData.checksum = calculatedChecksum;
+          try {
+            await this.db.save('saves', slotId, saveData as any);
+          } catch (err) {
+            console.warn('[loadGame] Failed to persist repaired checksum locally:', err);
+          }
+          if (this.cloudSyncEnabled) {
+            try {
+              // Try to also repair cloud copy using current metadata
+              const metadata = await this.db.load('metadata', slotId);
+              if (metadata) {
+                const { id: _id, ...metaNoId } = metadata;
+                void cloudSaveService.save(slotId, saveData, metaNoId).catch(err => {
+                  console.warn('[loadGame] Failed to persist repaired checksum to cloud:', err);
+                });
+              }
+            } catch (err) {
+              console.warn('[loadGame] Cloud repair path threw (non-fatal):', err);
+            }
+          }
         }
       }
 
@@ -337,6 +759,21 @@ export class SaveSystem {
 
       // Convert evolutions array back to Map
       const evolutions = new Map(saveData.evolutions);
+      // If we have cloud achievements to merge (from earlier decision), include them in extras
+      let mergedAchievements = saveData.achievements;
+      try {
+        const fromCloud: any[] | undefined = (this as any)._mergeAchievementsFromCloud;
+        if (Array.isArray(fromCloud) && fromCloud.length > 0) {
+          const set = new Map<string, any>();
+          (saveData.achievements || []).forEach(a => a && set.set(a.id, a));
+          fromCloud.forEach(a => a && set.set(a.id, a));
+          mergedAchievements = Array.from(set.values());
+        }
+      } catch {}
+      // Cleanup the temp field
+      try {
+        delete (this as any)._mergeAchievementsFromCloud;
+      } catch {}
 
       return {
         gameState: saveData.game,
@@ -345,6 +782,7 @@ export class SaveSystem {
         settings: saveData.settings,
         metadata,
         extras: {
+          achievements: mergedAchievements,
           moveHistory: saveData.moveHistory,
           undoStack: saveData.undoStack,
           redoStack: saveData.redoStack,
@@ -908,12 +1346,180 @@ export class SaveSystem {
       ].every(k => !r[k] || r[k] === 0);
       const evolutionsEmpty = !saveData.evolutions || saveData.evolutions.length === 0;
       const playTime = saveData.playerStats?.totalPlayTime || 0;
-      const moves = saveData.moveHistory?.length || 0;
       const hasUnlocks = Boolean(saveData.unlockedEvolutions && saveData.unlockedEvolutions.length);
-      // Consider trivial if no resources, no evolutions, no moves, minimal play time (< 60s), no unlocks
-      return allZeroResources && evolutionsEmpty && moves === 0 && playTime < 60_000 && !hasUnlocks;
+      // Consider trivial if no resources, no evolutions, minimal play time (< 60s), and no unlocks —
+      // achievements and move history are ignored for overwrite protection. This prevents local
+      // snapshots with a few moves (but zero resources) from clobbering richer cloud saves.
+      return allZeroResources && evolutionsEmpty && playTime < 60_000 && !hasUnlocks;
     } catch {
       return false;
+    }
+  }
+
+  private async getCurrentAchievements(): Promise<any[]> {
+    try {
+      // Lazy import to avoid circular dependency
+      const { progressTracker } = await import('./ProgressTracker');
+      if (progressTracker && typeof progressTracker.getAchievements === 'function') {
+        await progressTracker.ensureInitialized();
+        return await progressTracker.getAchievements();
+      }
+    } catch (err) {
+      console.warn('Failed to get achievements for save:', err);
+    }
+    // Fallback: reconstruct achievements from localStorage snapshots/pending so
+    // we still persist them to cloud even if the tracker isn't ready yet.
+    try {
+      const fromSnapshot = this.readAchievementsFromLocalFallbacks();
+      if (fromSnapshot.length) return fromSnapshot;
+    } catch (e) {
+      // ignore
+    }
+    return [];
+  }
+
+  // Attempt to read a minimal set of achievements from localStorage-based fallbacks
+  // used by ProgressTracker to survive reloads. This returns normalized objects
+  // with id, claimed, and unlockedTimestamp, and enriches with definitions when available.
+  private readAchievementsFromLocalFallbacks(): any[] {
+    try {
+      if (typeof localStorage === 'undefined' || localStorage === null) return [];
+
+      // Load minimal snapshot [{ id, unlockedTimestamp, claimed }]
+      let snapshot: Array<{ id: string; unlockedTimestamp?: number; claimed?: boolean }> = [];
+      try {
+        const raw = localStorage.getItem('chronochess_achievements_snapshot');
+        if (raw) snapshot = JSON.parse(raw) || [];
+      } catch {
+        snapshot = [];
+      }
+
+      // Load pending full achievements map
+      let pending: Record<string, any> = {};
+      try {
+        const raw = localStorage.getItem('chronochess_pending_achievements');
+        if (raw) pending = JSON.parse(raw) || {};
+      } catch {
+        pending = {};
+      }
+
+      // Load claimed fallback map (full achievements)
+      let claimedFallback: Record<string, any> = {};
+      try {
+        const raw = localStorage.getItem('chronochess_claimed_fallback');
+        if (raw) claimedFallback = JSON.parse(raw) || {};
+      } catch {
+        claimedFallback = {};
+      }
+
+      // Load claimed flags
+      let claimedFlags: Record<string, boolean> = {};
+      try {
+        const raw = localStorage.getItem('chronochess_claimed_flags');
+        if (raw) claimedFlags = JSON.parse(raw) || {};
+      } catch {
+        claimedFlags = {};
+      }
+
+      // Optionally load definitions to enrich minimal records
+      let defsById: Map<string, any> | null = null;
+      try {
+        // Importing the tracker to access definitions is safe without initialization
+        // (the method reads static definitions only)
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { progressTracker } = require('./ProgressTracker');
+        if (progressTracker && typeof progressTracker.getAllAchievementDefinitions === 'function') {
+          const defs = progressTracker.getAllAchievementDefinitions();
+          defsById = new Map(defs.map((d: any) => [d.id, d]));
+        }
+      } catch {
+        defsById = null;
+      }
+
+      const merged = new Map<string, any>();
+
+      // Seed with full claimed fallback entries
+      for (const [id, ach] of Object.entries(claimedFallback)) {
+        if (!ach || typeof ach !== 'object') continue;
+        merged.set(id, { ...ach, claimed: true });
+      }
+
+      // Merge pending full entries (prefer claimed true; newer unlockedTimestamp wins)
+      for (const [id, ach] of Object.entries(pending)) {
+        if (!ach || typeof ach !== 'object') continue;
+        const existing = merged.get(id);
+        if (!existing) {
+          merged.set(id, { ...ach, claimed: !!ach.claimed });
+        } else {
+          const claimed = !!(existing.claimed || ach.claimed);
+          const ts = Math.max(existing.unlockedTimestamp || 0, ach.unlockedTimestamp || 0);
+          merged.set(id, { ...existing, ...ach, claimed, unlockedTimestamp: ts });
+        }
+      }
+
+      // Merge snapshot minimal entries; enrich with defs if possible
+      for (const entry of snapshot) {
+        if (!entry || !entry.id) continue;
+        const existing = merged.get(entry.id);
+        const claimed = !!(existing?.claimed || entry.claimed);
+        const ts = Math.max(existing?.unlockedTimestamp || 0, entry.unlockedTimestamp || 0);
+        if (existing) {
+          existing.claimed = claimed;
+          if (ts) existing.unlockedTimestamp = ts;
+          merged.set(entry.id, existing);
+        } else {
+          const def = defsById?.get(entry.id);
+          if (def) {
+            merged.set(entry.id, {
+              ...def,
+              unlockedTimestamp: ts || Date.now(),
+              claimed,
+            });
+          } else {
+            merged.set(entry.id, {
+              id: entry.id,
+              name: entry.id,
+              description: '',
+              category: 'special',
+              rarity: 'common',
+              reward: {},
+              unlockedTimestamp: ts || Date.now(),
+              claimed,
+            });
+          }
+        }
+      }
+
+      // Apply claimed flags last (only set to true, never false)
+      for (const [id, flag] of Object.entries(claimedFlags)) {
+        if (!flag) continue;
+        const existing = merged.get(id);
+        if (existing) {
+          existing.claimed = true;
+          merged.set(id, existing);
+        } else {
+          const def = defsById?.get(id);
+          merged.set(
+            id,
+            def
+              ? { ...def, unlockedTimestamp: Date.now(), claimed: true }
+              : {
+                  id,
+                  name: id,
+                  description: '',
+                  category: 'special',
+                  rarity: 'common',
+                  reward: {},
+                  unlockedTimestamp: Date.now(),
+                  claimed: true,
+                }
+          );
+        }
+      }
+
+      return Array.from(merged.values());
+    } catch {
+      return [];
     }
   }
 }

@@ -1,4 +1,5 @@
 import { getSupabaseClient } from './supabaseClient';
+import { levelFromXP, LEVEL_CAP } from './leveling';
 
 export interface UserProfile {
   id: string;
@@ -178,8 +179,9 @@ export const updateGameStats = async (
       gameResult === 'win' ? currentProfile.games_won + 1 : currentProfile.games_won;
     const newExperience = currentProfile.experience_points + experienceGained;
 
-    // Calculate new level (every 1000 XP = 1 level)
-    const newLevel = Math.min(100, Math.floor(newExperience / 1000) + 1);
+    // Calculate new level using exponential curve
+    const computedLevel = levelFromXP(newExperience);
+    const newLevel = Math.min(LEVEL_CAP, computedLevel);
 
     const { data, error } = await supabase
       .from('profiles')
@@ -228,6 +230,44 @@ export const getLeaderboard = async (limit: number = 10): Promise<UserProfile[]>
   } catch (error) {
     console.error('Error fetching leaderboard:', error);
     return [];
+  }
+};
+
+/**
+ * Merge local guest solo stats into the authenticated user's cloud profile.
+ * Safe to call on sign-in; merges by incrementing cloud `games_played`/`games_won`.
+ * XP is not merged here (XP comes from encounter resolution going forward).
+ */
+export const mergeGuestStatsToCloud = async (
+  userId: string,
+  guestStats: { gamesPlayed?: number; gamesWon?: number }
+): Promise<UserProfile | null> => {
+  const supabase = getSupabaseClient();
+  if (!supabase) return null;
+
+  try {
+    const currentProfile = await getUserProfile(userId);
+    if (!currentProfile) return null;
+
+    const addPlayed = Math.max(0, Math.floor(guestStats.gamesPlayed || 0));
+    const addWon = Math.max(0, Math.floor(guestStats.gamesWon || 0));
+    if (addPlayed === 0 && addWon === 0) return currentProfile;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        games_played: (currentProfile.games_played || 0) + addPlayed,
+        games_won: (currentProfile.games_won || 0) + addWon,
+      })
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error merging guest stats to cloud:', error);
+    return null;
   }
 };
 

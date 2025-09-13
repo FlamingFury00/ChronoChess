@@ -53,35 +53,51 @@ alter table public.profiles enable row level security;
 alter table public.saves enable row level security;
 
 -- Profiles policies: users can read all profiles but only update their own
-create policy if not exists "Profiles are viewable by everyone"
-  on public.profiles for select
+
+drop policy if exists "Profiles are viewable by everyone" on public.profiles;
+create policy "Profiles are viewable by everyone"
+  on public.profiles
+  for select
   using (true);
 
-create policy if not exists "Users can insert their own profile"
-  on public.profiles for insert
+drop policy if exists "Users can insert their own profile" on public.profiles;
+create policy "Users can insert their own profile"
+  on public.profiles
+  for insert
   with check (auth.uid() = id);
 
-create policy if not exists "Users can update their own profile"
-  on public.profiles for update
+drop policy if exists "Users can update their own profile" on public.profiles;
+create policy "Users can update their own profile"
+  on public.profiles
+  for update
   using (auth.uid() = id)
   with check (auth.uid() = id);
 
 -- Saves policies: users can manage only their own saves
-create policy if not exists "Users can SELECT own saves"
-  on public.saves for select
+
+drop policy if exists "Users can SELECT own saves" on public.saves;
+create policy "Users can SELECT own saves"
+  on public.saves
+  for select
   using (auth.uid() = user_id);
 
-create policy if not exists "Users can UPSERT own saves"
-  on public.saves for insert
+drop policy if exists "Users can UPSERT own saves" on public.saves;
+create policy "Users can UPSERT own saves"
+  on public.saves
+  for insert
   with check (auth.uid() = user_id);
 
-create policy if not exists "Users can UPDATE own saves"
-  on public.saves for update
+drop policy if exists "Users can UPDATE own saves" on public.saves;
+create policy "Users can UPDATE own saves"
+  on public.saves
+  for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create policy if not exists "Users can DELETE own saves"
-  on public.saves for delete
+drop policy if exists "Users can DELETE own saves" on public.saves;
+create policy "Users can DELETE own saves"
+  on public.saves
+  for delete
   using (auth.uid() = user_id);
 
 -- Function to handle new user profile creation

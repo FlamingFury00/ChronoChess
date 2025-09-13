@@ -168,6 +168,8 @@ export interface ExportData {
 
 // Helper type for passing extras into SaveSystem
 export interface SaveSystemExtras {
+  // Achievements snapshot to restore on load (especially from cloud)
+  achievements?: Achievement[];
   pieceEvolutions?: PieceEvolutionData;
   soloModeStats?: {
     encountersWon: number;

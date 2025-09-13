@@ -27,6 +27,7 @@ function App() {
   const { ui, setCurrentScene } = useGameStore();
   const [user, setUser] = useState<User | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [gameSystemsActive, setGameSystemsActive] = useState(false);
 
   // Check authentication status
@@ -34,6 +35,7 @@ function App() {
     const checkAuth = async () => {
       const currentUser = await getCurrentUser();
       setUser(currentUser);
+      setIsAuthChecked(true);
     };
     checkAuth();
   }, []);
@@ -44,11 +46,17 @@ function App() {
       console.log('🚀 Initializing ChronoChess...');
 
       try {
+        // Check if a user session already exists so we can set the initial scene appropriately
+        const existingUser = await getCurrentUser();
+        if (existingUser) {
+          setUser(existingUser);
+        }
+
         // Set initial UI state first
         const store = useGameStore.getState();
         store.updateUI({
           isLoading: false,
-          currentScene: 'landing',
+          currentScene: existingUser ? 'menu' : 'landing',
         });
 
         // Then initialize basic systems (audio, save system)
@@ -60,10 +68,19 @@ function App() {
         console.error('❌ Failed to initialize basic systems:', error);
         // Still mark as initialized to allow UI to render
         const store = useGameStore.getState();
-        store.updateUI({
-          isLoading: false,
-          currentScene: 'landing',
-        });
+        try {
+          const fallbackUser = await getCurrentUser();
+          if (fallbackUser) setUser(fallbackUser);
+          store.updateUI({
+            isLoading: false,
+            currentScene: fallbackUser ? 'menu' : 'landing',
+          });
+        } catch {
+          store.updateUI({
+            isLoading: false,
+            currentScene: 'landing',
+          });
+        }
         setIsInitialized(true);
       }
     };
@@ -168,6 +185,17 @@ function App() {
         return <LandingScene onSceneChange={handleSceneChange} />;
     }
   };
+
+  // Hold UI with a small overlay spinner until auth check completes
+  if (!isAuthChecked) {
+    return (
+      <div className="app">
+        <div className="app__auth-gate">
+          <div className="app__spinner" aria-label="Loading" role="status" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">

@@ -5,7 +5,11 @@ import { Button } from '../../components/common';
 import { getSupabaseClient } from '../../lib/supabaseClient';
 import { syncGuestProgressToCloud } from '../../lib/cloudSyncManager';
 import { loginSchema, registerSchema, sanitizeInput } from '../../lib/authValidation';
-import { checkUsernameAvailability, getCurrentUserProfile } from '../../lib/profileService';
+import {
+  checkUsernameAvailability,
+  getCurrentUserProfile,
+  mergeGuestStatsToCloud,
+} from '../../lib/profileService';
 import type { SceneProps } from '../types';
 import type { LoginFormData, RegisterFormData } from '../../lib/authValidation';
 import type { User, AuthError } from '@supabase/supabase-js';
@@ -59,6 +63,22 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
         setUserProfile(profile);
         // Attempt post-auth sync (user could have previously played as guest on this device)
         syncGuestProgressToCloud().catch(err => console.warn('Guest->cloud sync failed:', err));
+        // Push guest solo stats (encounters won/played) into cloud profile for consistency
+        try {
+          const { useGameStore } = await import('../../store');
+          const solo = useGameStore.getState().soloModeStats;
+          const merged = await mergeGuestStatsToCloud(session.user.id, {
+            gamesPlayed: solo?.encountersWon + solo?.encountersLost || 0,
+            gamesWon: solo?.encountersWon || 0,
+          });
+          if (merged) {
+            try {
+              window.dispatchEvent(new CustomEvent('profile:updated'));
+            } catch {}
+          }
+        } catch (err) {
+          console.warn('Merging guest stats to cloud failed:', err);
+        }
       }
     };
 
@@ -82,6 +102,21 @@ export const AuthScene: React.FC<SceneProps> = ({ onSceneChange }) => {
             console.log('[AuthScene] Post-login save reconciliation:', result);
           } catch (err) {
             console.warn('Post-login cloud sync failed:', err);
+          }
+          // Then push guest solo stats (best-effort) into cloud profile
+          try {
+            const solo = (await import('../../store')).useGameStore.getState().soloModeStats;
+            const merged = await mergeGuestStatsToCloud(session.user.id, {
+              gamesPlayed: solo?.encountersWon + solo?.encountersLost || 0,
+              gamesWon: solo?.encountersWon || 0,
+            });
+            if (merged) {
+              try {
+                window.dispatchEvent(new CustomEvent('profile:updated'));
+              } catch {}
+            }
+          } catch (err) {
+            console.warn('Post-login guest stats merge failed:', err);
           }
         }
       });

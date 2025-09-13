@@ -2,6 +2,16 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import ResourceDisplay from '../ResourceDisplay/ResourceDisplay';
 
+// Mock the game systems manager
+vi.mock('../../lib/gameSystemsManager', () => ({
+  shouldResourceGenerationBeInStandby: () => false, // Not in standby for test
+}));
+
+// Mock the resource config
+vi.mock('../../resources/resourceConfig', () => ({
+  DEFAULT_STANDBY_EFFICIENCY: 0.25,
+}));
+
 // Mock the game store
 vi.mock('../../store', () => ({
   useGameStore: () => ({
@@ -22,6 +32,9 @@ vi.mock('../../store', () => ({
         aetherShards: 1.0,
         arcaneMana: 2.0,
       },
+    },
+    ui: {
+      currentScene: 'menu', // Set to a game scene so standby mode is disabled
     },
   }),
 }));

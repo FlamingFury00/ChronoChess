@@ -51,6 +51,7 @@ export interface OfflineProgressResult {
 export interface ResourceConfig {
   maxOfflineHours: number;
   offlineEfficiency: number;
+  standbyEfficiency: number;
   generationTickRate: number;
 }
 

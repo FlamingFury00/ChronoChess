@@ -41,14 +41,19 @@ export function shouldGameSystemsBeActive(currentScene: SceneType, _user: User |
 }
 
 /**
- * Determine if resource generation should be active
+ * Determine if resource generation should be in standby mode (reduced efficiency)
  */
-export function shouldResourceGenerationBeActive(
+export function shouldResourceGenerationBeInStandby(
   currentScene: SceneType,
   user: User | null
 ): boolean {
-  // Resource generation follows the same rules as general game systems
-  return shouldGameSystemsBeActive(currentScene, user);
+  // If game systems should be active, don't use standby mode
+  if (shouldGameSystemsBeActive(currentScene, user)) {
+    return false;
+  }
+
+  // For pre-game scenes, use standby mode (reduced efficiency but still generating)
+  return true;
 }
 
 /**
