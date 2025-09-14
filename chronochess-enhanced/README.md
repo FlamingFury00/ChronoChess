@@ -2,8 +2,6 @@
 
 An idle-autobattler chess hybrid that combines traditional chess mechanics with idle progression systems and advanced 3D visualization.
 
-> Note: This repository contains a prototype build with known bugs and many features in progress. For the Devpost submission write-up, see [DEVPOST.md](./DEVPOST.md). For the full implementation plan, see [`.kiro/specs/chronochess-enhanced/tasks.md`](.kiro/specs/chronochess-enhanced/tasks.md).
-
 ## Features
 
 - **Enhanced Chess Engine**: Traditional chess with custom rules and piece abilities
