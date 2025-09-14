@@ -121,17 +121,25 @@ export const SoloModeScene: React.FC<SceneProps> = ({ onSceneChange }) => {
   useEffect(() => {
     if (rendererRef.current && is3DLoaded) {
       const animateMove = async (move: any) => {
-        if (rendererRef.current) {
+        if (!rendererRef.current) return;
+        try {
+          await rendererRef.current.animateChessMove(move, 600);
+          console.log('Move animation completed:', move);
+          // Always reconcile with the authoritative game state after animation
           try {
-            await rendererRef.current.animateChessMove(move, 600);
-            // Animation handles piece movement and promotion internally
-            console.log('Move animation completed:', move);
-          } catch (error) {
-            console.error('Move animation failed:', error);
-            // If animation fails, update board to ensure consistency
-            if (gameMode === 'manual') {
-              rendererRef.current.updateBoard(game);
-            }
+            const latestGame = useGameStore.getState().game;
+            rendererRef.current.updateBoard(latestGame);
+          } catch (reconErr) {
+            console.warn('Renderer reconcile after animation failed (non-fatal):', reconErr);
+          }
+        } catch (error) {
+          console.error('Move animation failed:', error);
+          // If animation fails, update board to ensure consistency
+          try {
+            const latestGame = useGameStore.getState().game;
+            rendererRef.current.updateBoard(latestGame);
+          } catch (reconErr) {
+            console.warn('Renderer reconcile after animation (error path) failed:', reconErr);
           }
         }
       };

@@ -1,6 +1,8 @@
 # ChronoChess
 
-An idle-autobattler chess hybrid that combines traditional chess mechanics with idle progression systems, narrative encounters, and advanced 3D visualization.
+An idle-autobattler chess hybrid that combines traditional chess mechanics with idle progression systems and advanced 3D visualization.
+
+> Note: This repository contains a prototype build with known bugs and many features in progress. For the Devpost submission write-up, see [DEVPOST.md](./DEVPOST.md). For the full implementation plan, see [`.kiro/specs/chronochess-enhanced/tasks.md`](.kiro/specs/chronochess-enhanced/tasks.md).
 
 ## Features
 
@@ -8,7 +10,7 @@ An idle-autobattler chess hybrid that combines traditional chess mechanics with 
 - **Idle Progression**: Resources generate automatically over time
 - **Piece Evolution**: Complex upgrade system with 10^12 possible combinations
 - **3D Visualization**: Immersive Three.js rendering with physics simulation
-- **Narrative Encounters**: Story-driven single-player campaign
+- **Solo Mode**: Play against AI with auto-battle options (narrative encounters planned)
 - **Multiplayer**: Competitive battles with evolved pieces
 - **Premium Aesthetics**: Monetization through visual enhancements
 

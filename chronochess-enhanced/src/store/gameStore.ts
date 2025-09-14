@@ -1107,6 +1107,31 @@ export const useGameStore = create<GameStore>()(
         try {
           const state = get();
 
+          // Prevent saving a trivial snapshot on pre-game scenes (landing/auth), which could
+          // overwrite a richer local/cloud save before proper loading completes.
+          const scene = state.ui.currentScene;
+          if (scene === 'landing' || scene === 'auth') {
+            try {
+              const r = state.resources || ({} as any);
+              const keys: Array<keyof typeof state.resources> = [
+                'temporalEssence',
+                'mnemonicDust',
+                'aetherShards',
+                'arcaneMana',
+              ];
+              const allZeroResources = keys.every(k => !(r as any)[k] || (r as any)[k] === 0);
+              const noEvolutions = (state.evolutions?.size || 0) === 0;
+              const noUnlocks = (state.unlockedEvolutions?.size || 0) === 0;
+              const noMoves = (state.moveHistory?.length || 0) === 0;
+              if (allZeroResources && noEvolutions && noUnlocks && noMoves) {
+                console.log(
+                  '⏭️ Skipping trivial save on pre-game scene to avoid overwriting progress.'
+                );
+                return;
+              }
+            } catch {}
+          }
+
           // Do not save while a match/encounter is active to avoid inconsistent snapshots
           if (state.isManualGameActive || state.autoBattleSystem) {
             console.log('⏸️ Skipping saveToStorage while a match/encounter is active');
@@ -3485,7 +3510,7 @@ export const useGameStore = create<GameStore>()(
                 renderer.clearAllHighlights();
               }
 
-              // Make AI move after a short delay
+              // Make AI move after a short delay (longer than animation duration)
               setTimeout(() => {
                 const updatedState = get();
                 console.log(
@@ -3497,14 +3522,26 @@ export const useGameStore = create<GameStore>()(
                 } else {
                   console.log(`🤖 AI Move Still Skipped in Timeout`);
                 }
-              }, 500); // Reasonable delay of 500ms for smoother gameplay
+              }, 750); // Ensure ~600ms animation completes before AI starts
             }
 
             // Trigger move animation if available (don't wait for it)
-            if (state.ui.moveAnimationCallback) {
+            {
               setTimeout(async () => {
                 try {
-                  await state.ui.moveAnimationCallback?.(result.move);
+                  const cb = get().ui.moveAnimationCallback;
+                  if (cb) {
+                    await cb(result.move);
+                  } else {
+                    // No animation callback: force a renderer board update to avoid visual desync
+                    try {
+                      const renderer = (window as any).chronoChessRenderer;
+                      if (renderer && renderer.updateBoard) {
+                        const gs = chessEngine.getGameState();
+                        renderer.updateBoard(gs);
+                      }
+                    } catch {}
+                  }
                 } catch (error) {
                   console.error('Move animation failed:', error);
                 }
@@ -3567,12 +3604,22 @@ export const useGameStore = create<GameStore>()(
               if (result.success && result.move) {
                 // Trigger move animation if available
                 const animateMove = async () => {
-                  if (state.ui.moveAnimationCallback) {
+                  try {
+                    // Wait for renderer to be idle to prevent overlapping animations
                     try {
-                      await state.ui.moveAnimationCallback?.(result.move);
-                    } catch (error) {
-                      console.error('AI move animation failed:', error);
+                      const renderer = (window as any).chronoChessRenderer;
+                      const start = Date.now();
+                      while (renderer && renderer.isAnimating) {
+                        if (Date.now() - start > 3000) break; // safety timeout
+                        await new Promise(r => setTimeout(r, 25));
+                      }
+                    } catch {}
+                    const cb = get().ui.moveAnimationCallback;
+                    if (cb) {
+                      await cb(result.move);
                     }
+                  } catch (error) {
+                    console.error('AI move animation failed:', error);
                   }
                 };
                 animateMove().then(() => {
@@ -3580,6 +3627,13 @@ export const useGameStore = create<GameStore>()(
                   // Update game state after animation
                   const newGameState = chessEngine.getGameState();
                   set({ game: newGameState });
+                  // Always reconcile renderer after animation resolves
+                  try {
+                    const renderer = (window as any).chronoChessRenderer;
+                    if (renderer && renderer.updateBoard) {
+                      renderer.updateBoard(newGameState);
+                    }
+                  } catch {}
                   get().addMoveToHistory(result.move);
                   get().addToGameLog(`AI: ${result.move.san}`);
                   const currentStateForSound = get();
@@ -3614,18 +3668,33 @@ export const useGameStore = create<GameStore>()(
               );
               if (result.success && result.move) {
                 const animateMove = async () => {
-                  if (state.ui.moveAnimationCallback) {
+                  try {
                     try {
-                      await state.ui.moveAnimationCallback?.(result.move);
-                    } catch (error) {
-                      console.error('AI move animation failed:', error);
+                      const renderer = (window as any).chronoChessRenderer;
+                      const start = Date.now();
+                      while (renderer && renderer.isAnimating) {
+                        if (Date.now() - start > 3000) break;
+                        await new Promise(r => setTimeout(r, 25));
+                      }
+                    } catch {}
+                    const cb = get().ui.moveAnimationCallback;
+                    if (cb) {
+                      await cb(result.move);
                     }
+                  } catch (error) {
+                    console.error('AI move animation failed:', error);
                   }
                 };
                 animateMove().then(() => {
                   if (!result.move) return;
                   const newGameState = chessEngine.getGameState();
                   set({ game: newGameState });
+                  try {
+                    const renderer = (window as any).chronoChessRenderer;
+                    if (renderer && renderer.updateBoard) {
+                      renderer.updateBoard(newGameState);
+                    }
+                  } catch {}
                   get().addMoveToHistory(result.move);
                   get().addToGameLog(`AI: ${result.move.san}`);
                   const currentStateForSound = get();
@@ -3668,18 +3737,33 @@ export const useGameStore = create<GameStore>()(
               );
               if (result.success && result.move) {
                 const animateMove = async () => {
-                  if (state.ui.moveAnimationCallback) {
+                  try {
                     try {
-                      await state.ui.moveAnimationCallback?.(result.move);
-                    } catch (error) {
-                      console.error('AI move animation failed:', error);
+                      const renderer = (window as any).chronoChessRenderer;
+                      const start = Date.now();
+                      while (renderer && renderer.isAnimating) {
+                        if (Date.now() - start > 3000) break;
+                        await new Promise(r => setTimeout(r, 25));
+                      }
+                    } catch {}
+                    const cb = get().ui.moveAnimationCallback;
+                    if (cb) {
+                      await cb(result.move);
                     }
+                  } catch (error) {
+                    console.error('AI move animation failed:', error);
                   }
                 };
                 animateMove().then(() => {
                   if (!result.move) return;
                   const newGameState = chessEngine.getGameState();
                   set({ game: newGameState });
+                  try {
+                    const renderer = (window as any).chronoChessRenderer;
+                    if (renderer && renderer.updateBoard) {
+                      renderer.updateBoard(newGameState);
+                    }
+                  } catch {}
                   get().addMoveToHistory(result.move);
                   get().addToGameLog(`AI: ${result.move.san}`);
                   const currentStateForSound = get();
@@ -4152,8 +4236,13 @@ export const useGameStore = create<GameStore>()(
           const dashChance = pieceEvolutions.knight.dashChance;
           const dashCooldown = state.knightDashCooldown;
 
+          // Ability gating: only allow dash to trigger if the evolution is actually unlocked
+          const dashActive =
+            state.pieceEvolutions?.knight &&
+            ((state.pieceEvolutions as any).knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
+
           // Check if knight can dash (random chance and cooldown)
-          if (Math.random() < dashChance && dashCooldown === 0) {
+          if (dashActive && Math.random() < dashChance && dashCooldown === 0) {
             console.log(`⚡ HUMAN PLAYER Knight dash triggered: ${move.to}`);
 
             // Set pending dash move for human player to choose
@@ -4210,8 +4299,11 @@ export const useGameStore = create<GameStore>()(
         } else if (pieceType === 'n' && playerColor === 'b') {
           // AI knight - automatic dash
           const dashChance = pieceEvolutions.knight.dashChance;
+          const dashActive =
+            state.pieceEvolutions?.knight &&
+            ((state.pieceEvolutions as any).knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
 
-          if (Math.random() < dashChance) {
+          if (dashActive && Math.random() < dashChance) {
             console.log(`⚡ AI Knight dash triggered: ${move.to}`);
 
             const possibleDashMoves = chessEngine.getValidMoves(move.to as any);
@@ -5771,6 +5863,27 @@ export const useGameStore = create<GameStore>()(
 
         console.log(`⚡ Executing knight dash: ${fromSquare} -> ${selectedMove.to}`);
 
+        // Make the actual dash move using the chess engine (only if ability really unlocked)
+        try {
+          const storeEvos = state.pieceEvolutions as any;
+          const active =
+            storeEvos &&
+            storeEvos.knight &&
+            (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
+          if (!active) {
+            // Safety: do not execute or log a dash if player doesn't own it
+            console.log(
+              `🛑 Blocked manual Knight Dash execution/log: ability not unlocked in store for ${fromSquare}`
+            );
+            set({ pendingPlayerDashMove: null });
+            return false;
+          }
+        } catch (err) {
+          console.warn('Knight Dash activation check failed; aborting dash to avoid false logs');
+          set({ pendingPlayerDashMove: null });
+          return false;
+        }
+
         // Make the actual dash move using the chess engine
         const dashResult = chessEngine.makeMove(
           selectedMove.from,
@@ -5789,7 +5902,22 @@ export const useGameStore = create<GameStore>()(
 
           // Add dash move to history and log
           get().addMoveToHistory(dashResult.move);
-          get().addToGameLog(`✨ YOU: KNIGHT DASH! ${selectedMove.from}->${selectedMove.to}`);
+          try {
+            const storeEvos = state.pieceEvolutions as any;
+            const active =
+              storeEvos &&
+              storeEvos.knight &&
+              (storeEvos.knight.dashChance || 0) > DEFAULT_DASH_CHANCE;
+            if (active) {
+              get().addToGameLog(`✨ YOU: KNIGHT DASH! ${selectedMove.from}->${selectedMove.to}`);
+            } else {
+              console.log(
+                `🛑 Skipping YOU: KNIGHT DASH log for ${selectedMove.from}->${selectedMove.to}: dash not active in store`
+              );
+            }
+          } catch {
+            // Best-effort gating — on error, skip log to avoid false positives
+          }
 
           // Update manual mode piece states
           get().updateManualModePieceStatesAfterMove(dashResult.move, 'w');
@@ -6581,6 +6709,11 @@ useGameStore.subscribe(
   () => {
     const state = useGameStore.getState();
     if (state.settings.autoSave) {
+      // Avoid autosaving while on pre-game scenes to prevent trivial snapshots
+      const scene = state.ui.currentScene;
+      if (scene === 'landing' || scene === 'auth') {
+        return;
+      }
       if (saveDebounceTimer) {
         clearTimeout(saveDebounceTimer);
       }
@@ -6588,6 +6721,10 @@ useGameStore.subscribe(
         // Double-check auto-save is still enabled
         const currentState = useGameStore.getState();
         if (currentState.settings.autoSave) {
+          const sc = currentState.ui.currentScene;
+          if (sc === 'landing' || sc === 'auth') {
+            return; // still avoid saving on pre-game scenes
+          }
           console.log('💾 Auto-save triggered by game state change');
           currentState.saveToStorage();
         }

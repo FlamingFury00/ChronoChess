@@ -69,20 +69,13 @@ export async function syncGuestProgressToCloud(slotId: string = 'chronochess_sav
           'aetherShards',
           'arcaneMana',
         ].every(k => !r[k] || r[k] === 0);
-        const noEvolutions =
+        const noUnlocks =
           !localData.unlockedEvolutions || localData.unlockedEvolutions.length === 0;
         const playTime = localData.soloModeStats?.totalPlayTime || 0;
         const totalMoves = localData.moveHistory?.length || 0;
-        const hasAchievements =
-          Array.isArray(localData.achievements) && localData.achievements.length > 0;
-        // Consider trivial if everything is essentially untouched AND there are no achievements
-        return (
-          allZeroResources &&
-          noEvolutions &&
-          playTime < 60_000 &&
-          totalMoves === 0 &&
-          !hasAchievements
-        );
+        // IMPORTANT: Do NOT consider achievements here. An achievements-only snapshot must still be
+        // treated as trivial to avoid overwriting richer cloud resources with zeros on login.
+        return allZeroResources && noUnlocks && playTime < 60_000 && totalMoves === 0;
       } catch {
         return false;
       }
