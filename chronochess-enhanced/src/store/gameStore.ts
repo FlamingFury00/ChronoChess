@@ -2781,6 +2781,10 @@ export const useGameStore = create<GameStore>()(
         }
 
         // Reset to starting position
+        // Enable manual mode behavior in engine (suppress stalemate)
+        try {
+          chessEngine.setManualMode(true);
+        } catch {}
         chessEngine.reset();
         const gameState = chessEngine.getGameState();
 
@@ -2848,6 +2852,11 @@ export const useGameStore = create<GameStore>()(
           selectedSquare: null,
           validMoves: [],
         });
+
+        // Disable manual mode behavior in engine after game ends
+        try {
+          chessEngine.setManualMode(false);
+        } catch {}
 
         // If a save was requested while the manual game was active, perform it now
         setTimeout(() => {
@@ -3571,12 +3580,163 @@ export const useGameStore = create<GameStore>()(
 
         // Use a Web Worker for AI calculation to avoid blocking UI/animations
         try {
-          // Get all possible moves for AI
+          // Get all possible standard moves for AI; do not early return on zero so we can
+          // still consider enhanced moves (abilities) before giving up.
           const possibleMoves = chessEngine.getValidMoves();
           console.log(`🤖 AI Possible Moves: ${possibleMoves.length}`);
-          if (possibleMoves.length === 0) {
-            console.log(`🤖 AI Move Skipped: No possible moves`);
-            return;
+
+          // Build ability/move context so the AI can be aware of unlocked abilities
+          // and the extra (enhanced) moves they provide in this position.
+          const chess = chessEngine.chess;
+          const board = chess.board();
+
+          const getSquareFromRC = (r: number, c: number) =>
+            String.fromCharCode(97 + c) + (8 - r).toString();
+
+          // Helper: compute base canonical destinations from chess.js for a square
+          const getCanonicalDests = (sq: string): Set<string> => {
+            try {
+              const base = chess.moves({ square: sq as any, verbose: true }) || [];
+              return new Set((base as any[]).map(m => m.to as string));
+            } catch {
+              return new Set<string>();
+            }
+          };
+
+          // Helper: get enhanced (extra) move destinations by diffing engine-enhanced moves
+          const getEnhancedExtras = (sq: string): string[] => {
+            try {
+              const canonical = getCanonicalDests(sq);
+              const enhanced = chessEngine.getValidMoves(sq as any) || [];
+              const extras: string[] = [];
+              (enhanced as any[]).forEach(m => {
+                const dest = (m && (m.to as string)) || '';
+                const isEnhancedFlag = !!(m && (m as any).enhanced);
+                if (dest && (!canonical.has(dest) || isEnhancedFlag)) {
+                  // Only include if it isn't a normal move or is explicitly marked enhanced
+                  if (!extras.includes(dest)) extras.push(dest);
+                }
+              });
+              return extras;
+            } catch (err) {
+              console.warn('AI ability context: getEnhancedExtras failed for', sq, err);
+              return [];
+            }
+          };
+
+          const extraMovesByFromWhite: Record<string, string[]> = {};
+          const extraMovesByFromBlack: Record<string, string[]> = {};
+
+          for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+              const piece = board[r][c];
+              if (!piece) continue;
+              const sq = getSquareFromRC(r, c);
+              const extras = getEnhancedExtras(sq);
+              if (extras.length === 0) continue;
+              if (piece.color === 'w') extraMovesByFromWhite[sq] = extras;
+              else extraMovesByFromBlack[sq] = extras;
+            }
+          }
+
+          const threatenedSquaresByWhiteExtra: string[] = Array.from(
+            new Set(Object.values(extraMovesByFromWhite).flat())
+          );
+
+          const abilityContext = {
+            extraMovesByFromWhite,
+            extraMovesByFromBlack,
+            threatenedSquaresByWhiteExtra,
+            pieceEvolutionsSnapshot: state.pieceEvolutions,
+            manualModePieceStates: state.manualModePieceStates,
+          } as any;
+
+          // PREEMPTIVE: If any enhanced black move yields an immediate capture, take it.
+          try {
+            const captureValues: Record<string, number> = {
+              p: 100,
+              n: 320,
+              b: 330,
+              r: 500,
+              q: 900,
+              k: 20000,
+            };
+            let best: { from: string; to: string; score: number } | null = null;
+            for (const [from, targets] of Object.entries(extraMovesByFromBlack)) {
+              for (const to of targets) {
+                // Only consider legal enhanced moves
+                let legal = false;
+                try {
+                  legal = chessEngine.isEnhancedMoveLegal(from as any, to as any);
+                } catch {}
+                if (!legal) continue;
+                const tgt = chessEngine.chess.get(to as any);
+                if (tgt && tgt.color === 'w' && tgt.type !== 'k') {
+                  const value = captureValues[tgt.type as keyof typeof captureValues] || 0;
+                  const score = value;
+                  if (!best || score > best.score) best = { from, to, score };
+                }
+              }
+            }
+            if (best) {
+              console.log(
+                `🤖 AI selecting enhanced capture before search: ${best.from}->${best.to}`
+              );
+              const result = chessEngine.makeMove(best.from as any, best.to as any);
+              if (result.success && result.move) {
+                const animateMove = async () => {
+                  try {
+                    try {
+                      const renderer = (window as any).chronoChessRenderer;
+                      const start = Date.now();
+                      while (renderer && renderer.isAnimating) {
+                        if (Date.now() - start > 3000) break; // safety timeout
+                        await new Promise(r => setTimeout(r, 25));
+                      }
+                    } catch {}
+                    const cb = get().ui.moveAnimationCallback;
+                    if (cb) {
+                      await cb(result.move);
+                    }
+                  } catch (error) {
+                    console.error('AI enhanced move animation failed:', error);
+                  }
+                };
+                animateMove().then(() => {
+                  if (!result.move) return;
+                  const newGameState = chessEngine.getGameState();
+                  set({ game: newGameState });
+                  try {
+                    const renderer = (window as any).chronoChessRenderer;
+                    if (renderer && renderer.updateBoard) {
+                      renderer.updateBoard(newGameState);
+                    }
+                  } catch {}
+                  get().addMoveToHistory(result.move);
+                  get().addToGameLog(`AI (enhanced): ${result.move.san}`);
+                  const currentStateForSound = get();
+                  if (currentStateForSound.settings.soundEnabled) {
+                    if (result.move.flags?.includes('c')) {
+                      simpleSoundPlayer.playSound('capture');
+                    } else {
+                      simpleSoundPlayer.playSound('move');
+                    }
+                  }
+                  get().updateManualModePieceStatesAfterMove(result.move, 'b');
+                  get().handleManualModeSpecialAbilities(result.move, 'b');
+                  if (newGameState.gameOver) {
+                    let victory = undefined;
+                    if (newGameState.inCheckmate) {
+                      victory = newGameState.turn === 'b';
+                    }
+                    setTimeout(() => get().endManualGame(victory), 1000);
+                  }
+                });
+              }
+              return; // Completed AI turn via enhanced move
+            }
+          } catch (err) {
+            console.warn('AI preemptive enhanced move selection failed:', err);
           }
 
           // Create a worker and instruct it to import the AIOpponent module URL
@@ -3589,7 +3749,13 @@ export const useGameStore = create<GameStore>()(
           const depth = 3;
           const pieceStates = state.manualModePieceStates;
 
-          worker.postMessage({ fen, depth, pieceStates, aiOpponentModuleUrl: aiModuleUrl });
+          worker.postMessage({
+            fen,
+            depth,
+            pieceStates,
+            abilityContext,
+            aiOpponentModuleUrl: aiModuleUrl,
+          });
 
           worker.onmessage = function (e) {
             const aiResult = e.data;
@@ -3660,6 +3826,10 @@ export const useGameStore = create<GameStore>()(
               }
             } else {
               // Fallback to random move if AI fails
+              if (!possibleMoves || possibleMoves.length === 0) {
+                console.log('🤖 AI fallback: no standard moves available; skipping AI move.');
+                return;
+              }
               const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
               const result = chessEngine.makeMove(
                 randomMove.from,
@@ -3724,6 +3894,10 @@ export const useGameStore = create<GameStore>()(
             console.error('AI Worker error:', err);
             // Fallback to synchronous AI if worker fails
             const aiOpponent = new AIOpponent();
+            try {
+              // Provide the same ability context to the synchronous AI
+              (aiOpponent as any).updateAbilityContext?.(abilityContext);
+            } catch {}
             const aiResult = aiOpponent.getBestMove(
               chessEngine.chess,
               3,

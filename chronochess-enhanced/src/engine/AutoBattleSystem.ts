@@ -5,6 +5,11 @@
 
 import { Chess, Move } from 'chess.js';
 import { AIOpponent, type PieceStateTracker } from './AIOpponent';
+import { ChessEngine } from './ChessEngine';
+import {
+  buildChronoChessStoreStubFromAutoBattleConfig,
+  applyGlobalChronoChessStoreStub,
+} from '../lib/evolutionStoreBridge';
 import type { PieceType } from './types';
 
 export interface AutoBattleConfig {
@@ -44,6 +49,7 @@ export interface AutoBattleCallbacks {
 export class AutoBattleSystem {
   private chess: Chess;
   private aiOpponent: AIOpponent;
+  private engine: ChessEngine | null = null;
   private isActive = false;
   private intervalId: NodeJS.Timeout | null = null;
   private config: AutoBattleConfig;
@@ -86,6 +92,26 @@ export class AutoBattleSystem {
 
     // Clear AI move history for fresh start
     this.aiOpponent.clearHistory();
+
+    // Initialize enhanced move engine with same position and unlock gating
+    try {
+      this.engine = new ChessEngine();
+      const fen = this.chess.fen();
+      this.engine.loadFromFen(fen);
+      const stub = buildChronoChessStoreStubFromAutoBattleConfig(this.pieceEvolutions);
+      applyGlobalChronoChessStoreStub(stub);
+      try {
+        this.engine.syncPieceEvolutionsWithBoard();
+      } catch {}
+      // Attach engine to AI so its search uses enhanced move generation
+      this.aiOpponent.attachChessEngine(this.engine);
+    } catch (err) {
+      console.warn(
+        'AutoBattle: failed to initialize ChessEngine (fallback to chess.js only):',
+        err
+      );
+      this.engine = null;
+    }
 
     const intervalTime =
       (this.config.baseIntervalTime + this.config.animationDuration) /
@@ -147,52 +173,109 @@ export class AutoBattleSystem {
 
     if (!aiResult.move) {
       console.warn('AI returned no move, trying random fallback');
-      // Fallback to random move
-      const possibleMoves = this.chess.moves({ verbose: true });
-      if (possibleMoves.length > 0) {
-        // Prefer non-king moves to avoid repetitive king shuffling
-        const nonKingMoves = possibleMoves.filter(m => {
-          const piece = this.chess.get(m.from);
-          return piece && piece.type !== 'k';
-        });
-
-        const movesToChooseFrom = nonKingMoves.length > 0 ? nonKingMoves : possibleMoves;
-        aiResult.move = movesToChooseFrom[Math.floor(Math.random() * movesToChooseFrom.length)];
-        aiResult.score = 0;
+      // Fallback to random move using enhanced engine if available
+      if (this.engine) {
+        const possible = (this.engine.getValidMoves() as any[]) || [];
+        if (possible.length > 0) {
+          const nonKing = possible.filter(m => {
+            const p = this.engine!.chess.get(m.from as any);
+            return p && p.type !== 'k';
+          });
+          const pool = nonKing.length > 0 ? nonKing : possible;
+          aiResult.move = pool[Math.floor(Math.random() * pool.length)] as any;
+          aiResult.score = 0;
+        } else {
+          console.error('No possible moves available (engine), ending encounter');
+          this.endEncounter();
+          return;
+        }
       } else {
-        console.error('No possible moves available, ending encounter');
-        this.endEncounter();
-        return;
+        const possibleMoves = this.chess.moves({ verbose: true });
+        if (possibleMoves.length > 0) {
+          const nonKingMoves = possibleMoves.filter(m => {
+            const piece = this.chess.get(m.from);
+            return piece && piece.type !== 'k';
+          });
+          const movesToChooseFrom = nonKingMoves.length > 0 ? nonKingMoves : possibleMoves;
+          aiResult.move = movesToChooseFrom[Math.floor(Math.random() * movesToChooseFrom.length)];
+          aiResult.score = 0;
+        } else {
+          console.error('No possible moves available, ending encounter');
+          this.endEncounter();
+          return;
+        }
       }
     }
 
-    const move = aiResult.move;
-    const piece = this.chess.get(move.from);
-    if (!piece) return;
+    const move = aiResult.move as any;
+    if (this.engine) {
+      // Engine-backed execution, then mirror to chess.js
+      // Compute promotion preference conservatively
+      let promotionPiece: PieceType | undefined = move.promotion;
+      try {
+        const from = move.from as string;
+        const to = move.to as string;
+        const p = this.engine.chess.get(from as any);
+        const toRank = parseInt(to[1], 10);
+        if (p && p.type === 'p') {
+          const isPromoRank =
+            (p.color === 'w' && toRank === 8) || (p.color === 'b' && toRank === 1);
+          if (isPromoRank && !promotionPiece)
+            promotionPiece = this.pieceEvolutions.pawn.promotionPreference as any;
+        }
+      } catch {}
 
-    const pieceType = piece.type;
-    const pieceColor = piece.color;
+      const result = this.engine.makeMove(move.from, move.to, promotionPiece as any);
+      if (result && result.success && result.move) {
+        // Mirror FEN to chess.js
+        try {
+          this.chess.load(this.engine.chess.fen());
+        } catch {}
 
-    // Handle pawn promotion
-    let promotionPiece = undefined;
-    if (move.flags.includes('p') && pieceType === 'p') {
-      promotionPiece = this.pieceEvolutions.pawn.promotionPreference;
-    }
+        // Determine moved piece (type/color) from mirrored board BEFORE notifying
+        let movedPieceType: PieceType = 'p' as any;
+        let movedPieceColor: 'w' | 'b' = 'w';
+        try {
+          const mp = this.chess.get((result.move as any).to as any);
+          if (mp) {
+            movedPieceType = mp.type as PieceType;
+            movedPieceColor = mp.color as any;
+          }
+        } catch {}
 
-    // Execute the move
-    const chessMove = this.chess.move(
-      promotionPiece ? { from: move.from, to: move.to, promotion: promotionPiece } : move.san
-    );
+        // Notify move executed using a chess.js-like Move (inject piece & color)
+        const executedMove = {
+          ...(result.move as any),
+          piece: movedPieceType,
+          color: movedPieceColor,
+        } as any as Move;
+        this.callbacks.onMoveExecuted(executedMove, aiResult.score);
 
-    if (chessMove) {
-      this.callbacks.onMoveExecuted(chessMove, aiResult.score);
+        // Update piece states using mirrored board
+        this.updateEncounterPieceStates(executedMove as any);
+        this.callbacks.onPieceStateUpdate(this.pieceStates);
 
-      // Update piece states
-      this.updateEncounterPieceStates(chessMove);
-      this.callbacks.onPieceStateUpdate(this.pieceStates);
-
-      // Handle special abilities
-      await this.handleSpecialAbilities(move, pieceType, pieceColor);
+        await this.handleSpecialAbilities(result.move as any, movedPieceType, movedPieceColor);
+      }
+    } else {
+      // Legacy chess.js execution
+      const piece = this.chess.get(move.from);
+      if (!piece) return;
+      const pieceType = piece.type as PieceType;
+      const pieceColor = piece.color as 'w' | 'b';
+      let promotionPiece = undefined;
+      if ((move.flags || '').includes('p') && pieceType === 'p') {
+        promotionPiece = this.pieceEvolutions.pawn.promotionPreference;
+      }
+      const chessMove = this.chess.move(
+        promotionPiece ? { from: move.from, to: move.to, promotion: promotionPiece } : move.san
+      );
+      if (chessMove) {
+        this.callbacks.onMoveExecuted(chessMove, aiResult.score);
+        this.updateEncounterPieceStates(chessMove);
+        this.callbacks.onPieceStateUpdate(this.pieceStates);
+        await this.handleSpecialAbilities(move as any, pieceType, pieceColor);
+      }
     }
   }
 
@@ -207,7 +290,8 @@ export class AutoBattleSystem {
     // Knight dash ability
     if (pieceType === 'n' && !this.chess.isGameOver()) {
       const dashChance = this.pieceEvolutions.knight.dashChance;
-      if (Math.random() < dashChance && this.knightGlobalDashCooldown === 0) {
+      const dashUnlocked = (dashChance || 0) > 0.1; // keep in sync with engine gating
+      if (dashUnlocked && Math.random() < dashChance && this.knightGlobalDashCooldown === 0) {
         await this.performKnightDash(move.to, pieceColor);
       }
     }
@@ -217,28 +301,47 @@ export class AutoBattleSystem {
    * Perform knight dash ability
    */
   private async performKnightDash(fromSquare: string, knightColor: 'w' | 'b'): Promise<void> {
-    const knightPiece = this.chess.get(fromSquare as any);
-    if (!knightPiece || knightPiece.type !== 'n' || knightPiece.color !== knightColor) {
-      return;
-    }
-
-    const dashMoves = this.chess.moves({ square: fromSquare as any, verbose: true });
-    if (dashMoves.length > 0) {
+    const dashUnlocked = (this.pieceEvolutions.knight.dashChance || 0) > 0.1;
+    if (!dashUnlocked) return;
+    if (this.engine) {
+      const kp = this.engine.chess.get(fromSquare as any);
+      if (!kp || kp.type !== 'n' || kp.color !== knightColor) return;
+      const dashMoves = (this.engine.getValidMoves(fromSquare as any) as any[]) || [];
+      if (dashMoves.length === 0) return;
       const dashMove = dashMoves[Math.floor(Math.random() * dashMoves.length)];
-
       this.callbacks.onKnightDash(fromSquare, dashMove.to);
-
-      // Trigger VFX effect
       const renderer = (window as any).chronoChessRenderer;
       if (renderer && renderer.triggerKnightDashVFX) {
         renderer.triggerKnightDashVFX(fromSquare, dashMove.to);
       }
-
-      const chessMove = this.chess.move(dashMove.san);
-      if (chessMove) {
+      const res = this.engine.makeMove(dashMove.from, dashMove.to, dashMove.promotion);
+      if (res && res.success) {
+        try {
+          this.chess.load(this.engine.chess.fen());
+        } catch {}
         this.knightGlobalDashCooldown = this.pieceEvolutions.knight.dashCooldown;
-        this.updateEncounterPieceStates(chessMove);
+        this.updateEncounterPieceStates(res.move as any);
         this.callbacks.onPieceStateUpdate(this.pieceStates);
+      }
+    } else {
+      const knightPiece = this.chess.get(fromSquare as any);
+      if (!knightPiece || knightPiece.type !== 'n' || knightPiece.color !== knightColor) {
+        return;
+      }
+      const dashMoves = this.chess.moves({ square: fromSquare as any, verbose: true });
+      if (dashMoves.length > 0) {
+        const dashMove = dashMoves[Math.floor(Math.random() * dashMoves.length)];
+        this.callbacks.onKnightDash(fromSquare, dashMove.to);
+        const renderer = (window as any).chronoChessRenderer;
+        if (renderer && renderer.triggerKnightDashVFX) {
+          renderer.triggerKnightDashVFX(fromSquare, dashMove.to);
+        }
+        const chessMove = this.chess.move(dashMove.san);
+        if (chessMove) {
+          this.knightGlobalDashCooldown = this.pieceEvolutions.knight.dashCooldown;
+          this.updateEncounterPieceStates(chessMove);
+          this.callbacks.onPieceStateUpdate(this.pieceStates);
+        }
       }
     }
   }
@@ -305,8 +408,12 @@ export class AutoBattleSystem {
       if (pieceState.color === previousMoveColor && square !== move.to) {
         pieceState.turnsStationary++;
 
-        // Check for rook entrenchment
+        // Check for rook entrenchment (only if unlocked)
+        const entrenchUnlocked =
+          (this.pieceEvolutions.rook.entrenchThreshold || 3) < 3 ||
+          (this.pieceEvolutions.rook.entrenchPower || 1) > 1;
         if (
+          entrenchUnlocked &&
           pieceState.type === 'r' &&
           !pieceState.isEntrenched &&
           pieceState.turnsStationary >= this.pieceEvolutions.rook.entrenchThreshold
@@ -321,8 +428,10 @@ export class AutoBattleSystem {
           }
         }
 
-        // Check for bishop consecration
+        // Check for bishop consecration (only if unlocked)
+        const consecrateUnlocked = (this.pieceEvolutions.bishop.consecrationTurns || 3) < 3;
         if (
+          consecrateUnlocked &&
           pieceState.type === 'b' &&
           !pieceState.isConsecratedSource &&
           pieceState.turnsStationary >= this.pieceEvolutions.bishop.consecrationTurns
@@ -382,8 +491,11 @@ export class AutoBattleSystem {
         });
       }
 
-      // Queen dominance aura
-      if (sourcePieceState.type === 'q') {
+      // Queen dominance aura (only if unlocked)
+      if (
+        sourcePieceState.type === 'q' &&
+        (this.pieceEvolutions.queen.dominanceAuraRange || 1) > 1
+      ) {
         const [queenFile, queenRank] = [
           sourceSquare.charCodeAt(0) - 97,
           parseInt(sourceSquare[1]) - 1,

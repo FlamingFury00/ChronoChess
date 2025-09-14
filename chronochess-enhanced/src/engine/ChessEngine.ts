@@ -20,6 +20,8 @@ export class ChessEngine {
   private pieceEvolutions: Map<Square, PieceEvolutionRef> = new Map();
   private moveHistory: Move[] = [];
   private checkmatePatterns: CheckmatePattern[] = [];
+  // Manual mode flag: when true, stalemate is not treated as game over
+  private manualMode: boolean = false;
 
   constructor() {
     this.chess = new Chess();
@@ -329,22 +331,42 @@ export class ChessEngine {
   }
 
   isGameOver(): boolean {
+    // In manual mode, ignore stalemate-only terminal condition
+    if (this.manualMode && this.chess.isStalemate() && !this.chess.isCheckmate()) {
+      return false;
+    }
     return this.chess.isGameOver();
   }
 
   getGameState(): GameState {
+    const fen = this.chess.fen();
+    const turn = this.chess.turn() as PlayerColor;
+    const inCheck = this.chess.inCheck();
+    const inCheckmate = this.chess.isCheckmate();
+    const inStalemateRaw = this.chess.isStalemate();
+    const inStalemate = this.manualMode ? false : inStalemateRaw;
+    let gameOver = this.chess.isGameOver();
+    if (this.manualMode && inStalemateRaw && !inCheckmate) {
+      gameOver = false;
+    }
+
     const gameState = {
-      fen: this.chess.fen(),
-      turn: this.chess.turn() as PlayerColor,
-      gameOver: this.chess.isGameOver(),
-      inCheck: this.chess.inCheck(),
-      inCheckmate: this.chess.isCheckmate(),
-      inStalemate: this.chess.isStalemate(),
+      fen,
+      turn,
+      gameOver,
+      inCheck,
+      inCheckmate,
+      inStalemate,
       moveHistory: [...this.moveHistory],
       lastEleganceScore: this.moveHistory[this.moveHistory.length - 1]?.eleganceScore,
     };
     console.log(`🔄 Getting game state. Turn: ${gameState.turn}, FEN: ${gameState.fen}`);
     return gameState;
+  }
+
+  // Toggle manual mode behavior for stalemate handling
+  public setManualMode(enabled: boolean): void {
+    this.manualMode = !!enabled;
   }
 
   // Enhanced mechanics implementation

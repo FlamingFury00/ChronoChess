@@ -4,6 +4,7 @@
  */
 
 import { Chess, Move } from 'chess.js';
+import { ChessEngine } from './ChessEngine';
 import type { PieceType } from './types';
 
 export interface AIResult {
@@ -109,9 +110,22 @@ export class AIOpponent {
   private pieceStates: PieceStateTracker = {};
   private nodesEvaluated = 0;
 
+  // Manual-mode ability/extra-move awareness context
+  private abilityContext: {
+    extraMovesByFromWhite?: Record<string, string[]>;
+    extraMovesByFromBlack?: Record<string, string[]>;
+    threatenedSquaresByWhiteExtra?: string[];
+    pieceEvolutionsSnapshot?: any;
+    manualModePieceStates?: any;
+  } = {};
+
   // Move history for repetition detection
   private moveHistory: string[] = [];
   private readonly MAX_HISTORY = 20;
+
+  // Optional enhanced-move engine (manual mode): when attached, minimax uses
+  // ChessEngine for move generation/execution to include evolution-enhanced moves.
+  private engine: ChessEngine | null = null;
 
   // AI personality traits (randomized each game)
   private personality = {
@@ -143,6 +157,13 @@ export class AIOpponent {
   clearHistory(): void {
     this.moveHistory = [];
     this.randomizePersonality(); // Give AI a new personality each game
+  }
+
+  /**
+   * Attach a ChessEngine instance to enable enhanced move generation/selection during search.
+   */
+  attachChessEngine(engine: ChessEngine | null): void {
+    this.engine = engine;
   }
 
   /**
@@ -218,6 +239,19 @@ export class AIOpponent {
       depth,
       nodesEvaluated: this.nodesEvaluated,
     };
+  }
+
+  /**
+   * Provide manual-mode ability context (unlocked abilities and extra moves) from the UI/store.
+   */
+  updateAbilityContext(ctx: {
+    extraMovesByFromWhite?: Record<string, string[]>;
+    extraMovesByFromBlack?: Record<string, string[]>;
+    threatenedSquaresByWhiteExtra?: string[];
+    pieceEvolutionsSnapshot?: any;
+    manualModePieceStates?: any;
+  }): void {
+    this.abilityContext = ctx || {};
   }
 
   /**
@@ -351,7 +385,10 @@ export class AIOpponent {
       return { score: this.evaluateBoard(chess, originalPlayerColor, depth), move: null };
     }
 
-    const possibleMoves = chess.moves({ verbose: true });
+    // Generate possible moves: if an enhanced ChessEngine is attached, use it; otherwise use chess.js.
+    const possibleMoves: any[] = this.engine
+      ? (this.engine.getValidMoves() as any[])
+      : (chess.moves({ verbose: true }) as any[]);
     if (possibleMoves.length === 0) {
       return { score: this.evaluateBoard(chess, originalPlayerColor, depth), move: null };
     }
@@ -379,15 +416,24 @@ export class AIOpponent {
     }
 
     // Sort moves to improve alpha-beta pruning efficiency
-    movesToConsider.sort((a, b) => {
+    movesToConsider.sort((a: any, b: any) => {
       let scoreA = 0,
         scoreB = 0;
 
       // Prioritize captures
-      if (a.captured)
-        scoreA += (this.pieceValues[a.captured as keyof typeof this.pieceValues] || 0) * 10;
-      if (b.captured)
-        scoreB += (this.pieceValues[b.captured as keyof typeof this.pieceValues] || 0) * 10;
+      // When using engine-based moves, captured isn't provided; infer via target piece lookup
+      const aCapRaw = (a as any).captured || chess.get(a.to as any)?.type;
+      const bCapRaw = (b as any).captured || chess.get(b.to as any)?.type;
+      const aCaptured: 'p' | 'n' | 'b' | 'r' | 'q' | 'k' | undefined =
+        aCapRaw && (['p', 'n', 'b', 'r', 'q', 'k'] as const).includes(aCapRaw as any)
+          ? (aCapRaw as any)
+          : undefined;
+      const bCaptured: 'p' | 'n' | 'b' | 'r' | 'q' | 'k' | undefined =
+        bCapRaw && (['p', 'n', 'b', 'r', 'q', 'k'] as const).includes(bCapRaw as any)
+          ? (bCapRaw as any)
+          : undefined;
+      if (aCaptured) scoreA += (this.pieceValues[aCaptured] || 0) * 10;
+      if (bCaptured) scoreB += (this.pieceValues[bCaptured] || 0) * 10;
 
       // Strongly discourage king moves in opening
       const pieceA = chess.get(a.from);
@@ -405,6 +451,27 @@ export class AIOpponent {
       if (pieceStateA && this.pieceHasSpecialAbilities(a.from, pieceStateA.type)) scoreA += 100;
       if (pieceStateB && this.pieceHasSpecialAbilities(b.from, pieceStateB.type)) scoreB += 100;
 
+      // Ability context: avoid moving pieces into squares that White can reach via extra (enhanced) moves
+      try {
+        const threatened = new Set(this.abilityContext.threatenedSquaresByWhiteExtra || []);
+        if (threatened.has(a.to)) scoreA -= 40; // prefer not to walk into player's enhanced threats
+        if (threatened.has(b.to)) scoreB -= 40;
+      } catch {}
+
+      // Prefer moves that neutralize player enhanced threats by capturing the threatening piece
+      try {
+        const extrasByFrom = this.abilityContext.extraMovesByFromWhite || {};
+        const capturingA = chess.get(a.to as any);
+        const capturingB = chess.get(b.to as any);
+        if (capturingA && capturingA.color === 'w') {
+          // If this white piece had extra moves, capturing it is even better
+          if (extrasByFrom[a.to]?.length) scoreA += 60;
+        }
+        if (capturingB && capturingB.color === 'w') {
+          if (extrasByFrom[b.to]?.length) scoreB += 60;
+        }
+      } catch {}
+
       return scoreB - scoreA;
     });
 
@@ -414,18 +481,52 @@ export class AIOpponent {
       let maxEval = -Infinity;
 
       for (const move of movesToConsider) {
-        chess.move(move);
-        const evaluation = this.minimax(chess, depth - 1, alpha, beta, false, originalPlayerColor);
-        chess.undo();
+        if (this.engine) {
+          // Use engine to apply and revert via FEN snapshots
+          const fenBefore = this.engine.chess.fen();
+          try {
+            this.engine.makeMove(move.from, move.to, move.promotion);
+          } catch {}
+          const evaluation = this.minimax(
+            this.engine.chess,
+            depth - 1,
+            alpha,
+            beta,
+            false,
+            originalPlayerColor
+          );
+          // Restore position
+          this.engine.loadFromFen(fenBefore);
+          try {
+            this.engine.syncPieceEvolutionsWithBoard();
+          } catch {}
+          if (evaluation.score > maxEval) {
+            maxEval = evaluation.score;
+            // Cast move to chess.js Move-like shape for consistency
+            bestMove = move as any;
+          }
 
-        if (evaluation.score > maxEval) {
-          maxEval = evaluation.score;
-          bestMove = move;
-        }
+          alpha = Math.max(alpha, evaluation.score);
+          if (beta <= alpha) break;
+        } else {
+          chess.move(move);
+          const evaluation = this.minimax(
+            chess,
+            depth - 1,
+            alpha,
+            beta,
+            false,
+            originalPlayerColor
+          );
+          chess.undo();
 
-        alpha = Math.max(alpha, evaluation.score);
-        if (beta <= alpha) {
-          break; // Alpha-beta pruning
+          if (evaluation.score > maxEval) {
+            maxEval = evaluation.score;
+            bestMove = move as any;
+          }
+
+          alpha = Math.max(alpha, evaluation.score);
+          if (beta <= alpha) break;
         }
       }
 
@@ -434,18 +535,43 @@ export class AIOpponent {
       let minEval = Infinity;
 
       for (const move of movesToConsider) {
-        chess.move(move);
-        const evaluation = this.minimax(chess, depth - 1, alpha, beta, true, originalPlayerColor);
-        chess.undo();
+        if (this.engine) {
+          const fenBefore = this.engine.chess.fen();
+          try {
+            this.engine.makeMove(move.from, move.to, move.promotion);
+          } catch {}
+          const evaluation = this.minimax(
+            this.engine.chess,
+            depth - 1,
+            alpha,
+            beta,
+            true,
+            originalPlayerColor
+          );
+          this.engine.loadFromFen(fenBefore);
+          try {
+            this.engine.syncPieceEvolutionsWithBoard();
+          } catch {}
 
-        if (evaluation.score < minEval) {
-          minEval = evaluation.score;
-          bestMove = move;
-        }
+          if (evaluation.score < minEval) {
+            minEval = evaluation.score;
+            bestMove = move as any;
+          }
 
-        beta = Math.min(beta, evaluation.score);
-        if (beta <= alpha) {
-          break; // Alpha-beta pruning
+          beta = Math.min(beta, evaluation.score);
+          if (beta <= alpha) break;
+        } else {
+          chess.move(move);
+          const evaluation = this.minimax(chess, depth - 1, alpha, beta, true, originalPlayerColor);
+          chess.undo();
+
+          if (evaluation.score < minEval) {
+            minEval = evaluation.score;
+            bestMove = move as any;
+          }
+
+          beta = Math.min(beta, evaluation.score);
+          if (beta <= alpha) break;
         }
       }
 
@@ -731,6 +857,26 @@ export class AIOpponent {
             pieceValue += abilityBonuses;
           }
 
+          // Manual-mode ability context adjustments
+          try {
+            // If this is a white piece with extra (enhanced) moves, respect that as increased danger
+            if (square.color === 'w') {
+              const extrasByFrom = this.abilityContext.extraMovesByFromWhite || {};
+              const extras = extrasByFrom[algebraicSquare] || [];
+              if (extras.length > 0) {
+                // More extra moves => higher tactical danger for black
+                pieceValue += Math.min(80, 10 + extras.length * 6);
+              }
+            }
+            // If this is a black piece and is sitting on a square that is threatened by white extra moves, penalize slightly
+            if (square.color === 'b') {
+              const threatened = new Set(this.abilityContext.threatenedSquaresByWhiteExtra || []);
+              if (threatened.has(algebraicSquare)) {
+                pieceValue -= 35;
+              }
+            }
+          } catch {}
+
           // Add to total evaluation (positive for player, negative for opponent)
           totalEvaluation += square.color === playerColor ? pieceValue : -pieceValue;
         }
@@ -783,9 +929,10 @@ export class AIOpponent {
   private isKnightDashCapable(_square: string): boolean {
     // Check if knight has dash ability based on evolution data
     const gameStore = (globalThis as any).chronoChessStore;
-    if (gameStore && gameStore.pieceEvolutions && gameStore.pieceEvolutions.knight) {
-      return gameStore.pieceEvolutions.knight.dashChance > 0.1;
-    }
+    // Prefer abilityContext snapshot when available (manual mode)
+    const snap = this.abilityContext?.pieceEvolutionsSnapshot;
+    const src = snap || (gameStore && gameStore.pieceEvolutions);
+    if (src && src.knight) return (src.knight.dashChance || 0) > 0.1;
     return false;
   }
 
@@ -794,9 +941,11 @@ export class AIOpponent {
    */
   private isPawnEvolved(_square: string): boolean {
     const gameStore = (globalThis as any).chronoChessStore;
-    if (gameStore && gameStore.pieceEvolutions && gameStore.pieceEvolutions.pawn) {
-      const pawnData = gameStore.pieceEvolutions.pawn;
-      return pawnData.marchSpeed > 1 || pawnData.resilience > 0;
+    const snap = this.abilityContext?.pieceEvolutionsSnapshot;
+    const src = snap || (gameStore && gameStore.pieceEvolutions);
+    if (src && src.pawn) {
+      const pawnData = src.pawn;
+      return (pawnData.marchSpeed || 1) > 1 || (pawnData.resilience || 0) > 0;
     }
     return false;
   }
