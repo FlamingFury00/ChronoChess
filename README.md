@@ -34,7 +34,7 @@ An idle-autobattler chess hybrid that combines traditional chess mechanics with 
 1. Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/FlamingFury00/ChronoChess
 cd chronochess-enhanced
 ```
 
